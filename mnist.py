@@ -2,6 +2,12 @@ import numpy as np
 from tensorflow import keras
 from tensorflow.keras import layers
 
+from tensorflow import config
+
+gpus = config.list_physical_devices('GPU')
+for gpu in gpus:
+    config.experimental.set_memory_growth(gpu, True)
+
 # Model / data parameters
 num_classes = 10
 input_shape = (28, 28, 1)
