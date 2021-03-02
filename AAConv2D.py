@@ -6,7 +6,7 @@ class AAConv2D(tf.keras.layers.Conv2D):
 
     def __init__(self, Fout, k, dk, dv, Nh, is_rel):
         
-        super(AAConv2D, self).__init__(filters = Fout - dv, kernel_size = k, padding = "same", activation = "relu")
+        super(AAConv2D, self).__init__(filters = Fout - dv, kernel_size = k, padding = "same")
 
         self.dk     = dk
         self.dkh    = dk // Nh
@@ -44,7 +44,6 @@ class AAConv2D(tf.keras.layers.Conv2D):
     def __mhead_satt2D(self, X):
         
         k, q, v = tf.split(self.kqv.call(X), num_or_size_splits = [self.dk, self.dk, self.dv], axis = 3)
-
         q      *= self.dkh ** -0.5
         k, q, v = [self.__split_heads2D(T) for T in [k, q, v]]
 
