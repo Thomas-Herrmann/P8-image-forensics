@@ -36,17 +36,17 @@ class AAConv2D(tf.keras.layers.Conv2D):
         
         super(AAConv2D, self).build(input_shape)
         
-        self.kqv.build(input_shape)
-        self.satt.build(input_shape)
+        #self.kqv.build(input_shape)
+        #self.satt.build(input_shape)
         
         initializer = tf.random_normal_initializer(self.dkh ** -0.5)
         H, W        = input_shape[1:-1]
 
-        self.r_height = tf.Variable(initializer(shape = [2 * H - 1, self.dkh], dtype = tf.float32))
-        self.r_width  = tf.Variable(initializer(shape = [2 * W - 1, self.dkh], dtype = tf.float32))
+        self.r_height = tf.Variable(initializer(shape = [2 * H - 1, self.dkh], dtype = tf.float32), name="H-POSENC")
+        self.r_width  = tf.Variable(initializer(shape = [2 * W - 1, self.dkh], dtype = tf.float32), name="W-POSENC")
 
 
-    @tf.autograph.experimental.do_not_convert
+    #@tf.autograph.experimental.do_not_convert
     def call(self, X, training = None):
         """Performs forward propagation on the layer, and returns the resulting output tensor."""
 
@@ -63,7 +63,7 @@ class AAConv2D(tf.keras.layers.Conv2D):
            where H and W are the height and width dimensions of the input tensor X."""
 
         # Construct key, query and value tensors based on inputs X and trained weights kqv
-        k, q, v = tf.split(self.kqv.call(X), num_or_size_splits = [self.dk, self.dk, self.dv], axis = 3)
+        k, q, v = tf.split(self.kqv(X), num_or_size_splits = [self.dk, self.dk, self.dv], axis = 3)
         q      *= self.dkh ** -0.5 # Scaled dot-product as in https://arxiv.org/pdf/1904.09925.pdf
         k, q, v = [self.__split_heads2D(T) for T in [k, q, v]]
 
@@ -86,7 +86,7 @@ class AAConv2D(tf.keras.layers.Conv2D):
         heads_combined = self.__combine_heads2D(deflattened)
 
         # Forward propagate resulting tensor through a convolutional layer and return the output (retaining shape)
-        return self.satt.call(heads_combined)
+        return self.satt(heads_combined)
 
 
     def __tensor_dims(self, X):
