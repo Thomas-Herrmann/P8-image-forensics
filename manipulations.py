@@ -7,55 +7,99 @@ from enum import Enum
 import PIL.Image
 import PIL.ImageOps
 import random
+import os
+import os.path
+import glob
 
 class ImageType(Enum):
-    IMG_NONE = -1
-    IMG_CV = 0
-    IMG_SK = 1
-    IMG_PIL = 2
+    NONE = -1
+    CV = 0
+    SK = 1
+    PIL = 2
+
+class ManiFamily(Enum):
+    BLUR = "blur"
+    RESIZE = "resize"
+    COMPRESS = "compression"
+    MORPH = "morphology"
+    NOISE = "noise"
+    QUANTIZATION = "quantization"
+    RESAMPLING = "resampling"
 
 class Image:
-    def __init__(self, path, type=ImageType.IMG_NONE, internal=None):
+    temp_path = "data/temp.png"
+
+    def __init__(self, path, type=ImageType.NONE, internal=None, modified=False):
         self.path = path
         self._type = type
         self._internal_img = internal
+        self._modified = modified
+
+    def crop(self, x, y, width, height):
+        cv_img = self.get_cv_image()
+        cv_img = cv_img[y:y+height, x:x+width]
+        return self.get_clone(cv_img)
+
+    def patches(self, psizex, psizey):
+        width, height = self.shape()
+        nx = width // psizex
+        ny = height // psizey
+
+        return [self.crop(x * psizex, y * psizey, psizex, psizey) for x in range(nx) for y in range(ny)]
+
+    def intensity_deviation(self):
+        return np.std(np.sum(self._internal_img, -1) / 3)
+
+    def shape(self):
+        cv_img = self.get_cv_image()
+        height, width, _ = cv_img.shape
+        return (width, height)
+
+    def _get_image(self, img_type, img_func):
+        path = self.path
+        if self._modified:
+            self.save(self.temp_path)
+            path = self.temp_path
+
+        if self._type != img_type:
+            self._type = img_type
+            self._internal_img = img_func(path)
+        
+        if self._modified:
+            try:
+                os.remove(self.temp_path)
+            except: pass
+        return self._internal_img
 
     def get_cv_image(self):
-        if self._type != ImageType.IMG_CV:
-            self._type = ImageType.IMG_CV
-            self._internal_img = cv.imread(self.path)
-        return self._internal_img
+        return self._get_image(ImageType.CV, cv.imread)
 
     def get_sk_image(self):
-        if self._type != ImageType.IMG_SK:
-            self._type = ImageType.IMG_SK
-            self._internal_img = skimage.io.imread(self.path)
-        return self._internal_img
+        return self._get_image(ImageType.SK, skimage.io.imread)
 
     def get_pil_image(self):
-        if self._type != ImageType.IMG_PIL:
-            self._type = ImageType.IMG_PIL
-            self._internal_img = PIL.Image.open(self.path)
-        return self._internal_img
+        return self._get_image(ImageType.PIL, PIL.Image.open)
 
     def save(self, filename=None):
         if filename is None:
             filename = self.path
         
-        if self._type == ImageType.IMG_NONE:
+        if self._type == ImageType.NONE:
             self.get_cv_image()
             self.save()
-        if self._type == ImageType.IMG_CV:
+
+        if self._type == ImageType.CV:
             cv.imwrite(filename, self._internal_img)
-        elif self._type == ImageType.IMG_SK:
+        elif self._type == ImageType.SK:
             skimage.io.imsave(filename, self._internal_img)
-        elif self._type == ImageType.IMG_PIL:
+        elif self._type == ImageType.PIL:
             self._internal_img.save(filename)
+        else:
+            raise Exception("Tried to save invalid file type")
 
     def get_clone(self, new_internal):
-        return Image(self.path, self._type, new_internal)
+        return Image(self.path, self._type, new_internal, True)
     
-
 
 def boxblur(ksize):
     def man_func(img):
@@ -63,7 +107,7 @@ def boxblur(ksize):
         cv_img = cv.boxFilter(cv_img, -1, (ksize, ksize))
         return img.get_clone(cv_img)
 
-    return (man_func, "BoxBlur-K" + str(ksize), {"ksize": ksize})
+    return (man_func, ManiFamily.BLUR, "BoxBlur", {"ksize": ksize})
 
 def gausblur(ksize):
     def man_func(img):
@@ -71,7 +115,7 @@ def gausblur(ksize):
         cv_img = cv.GaussianBlur(cv_img, (ksize, ksize), 0)
         return img.get_clone(cv_img)
 
-    return (man_func, "GausBlur-K" + str(ksize), {"ksize": ksize})
+    return (man_func, ManiFamily.BLUR, "GausBlur", {"ksize": ksize})
 
 def medianblur(ksize):
     def man_func(img):
@@ -79,7 +123,7 @@ def medianblur(ksize):
         cv_img = cv.medianBlur(cv_img, ksize)
         return img.get_clone(cv_img)
 
-    return (man_func, "MedianBlur-K" + str(ksize), {"ksize": ksize})
+    return (man_func, ManiFamily.BLUR, "MedianBlur", {"ksize": ksize})
 
 
 def resize_(interpolation, name, f):
@@ -92,13 +136,13 @@ def resize_(interpolation, name, f):
 
         return img.get_clone(cv_img)
     
-    return (man_func, name + str(f), {"f": f})
+    return (man_func, ManiFamily.RESIZE, name, {"f": f})
 
-area_resize = partial(resize_, cv.INTER_AREA, "AREAResize-s")
-cubic_resize = partial(resize_, cv.INTER_CUBIC, "CUBICResize-s")
-lanczos4_resize = partial(resize_, cv.INTER_LANCZOS4, "LANCZOS4Resize-s")
-linear_resize = partial(resize_, cv.INTER_LINEAR, "LINEARResize-s")
-nearest_resize = partial(resize_, cv.INTER_NEAREST, "NEARESTResize-s")
+area_resize = partial(resize_, cv.INTER_AREA, "AREAResize")
+cubic_resize = partial(resize_, cv.INTER_CUBIC, "CUBICResize")
+lanczos4_resize = partial(resize_, cv.INTER_LANCZOS4, "LANCZOS4Resize")
+linear_resize = partial(resize_, cv.INTER_LINEAR, "LINEARResize")
+nearest_resize = partial(resize_, cv.INTER_NEAREST, "NEARESTResize")
 
 
 def jpeg_compress(q):
@@ -108,7 +152,7 @@ def jpeg_compress(q):
         decoded = cv.imdecode(encoded, 1)
         return img.get_clone(decoded)
     
-    return (man_func, "JPEGCompress-Q" + str(q), {"q": q})
+    return (man_func, ManiFamily.COMPRESS, "JPEGCompress", {"q": q})
 
 def jpeg_double_compress(qs):
     (q1, q2) = qs
@@ -122,7 +166,7 @@ def jpeg_double_compress(qs):
 
         return img.get_clone(decoded2)
     
-    return (man_func, f"JPEGDoubleCompress-Q{str(q1)}-{str(q2)}", {"q1": q1, "q2": q2})
+    return (man_func, ManiFamily.COMPRESS, "JPEGDoubleCompress", {"q1": q1, "q2": q2})
 
 def webp_compress(q):
     def man_func(img):
@@ -131,7 +175,7 @@ def webp_compress(q):
         decoded = cv.imdecode(encoded, 1)
         return img.get_clone(decoded)
     
-    return (man_func, "WEBPCompress-Q" + str(q), {"q": q})
+    return (man_func, ManiFamily.COMPRESS, "WEBPCompress" + str(q), {"q": q})
 
 
 def morph_(morph_op, name, s):
@@ -142,12 +186,12 @@ def morph_(morph_op, name, s):
         cv_img =  cv.morphologyEx(cv_img, morph_op, retval)
         return img.get_clone(cv_img)
     
-    return (man_func, name + str(s), {"s": s})
+    return (man_func, ManiFamily.MORPH, name, {"s": s})
 
-close_morph = partial(morph_, cv.MORPH_CLOSE, "CLOSEMorph-S")
-dilate_morph = partial(morph_, cv.MORPH_DILATE, "DILATEMorph-S")
-erode_morph = partial(morph_, cv.MORPH_ERODE, "ERODEMorph-S")
-open_morph = partial(morph_, cv.MORPH_OPEN, "OPENMorph-S")
+close_morph = partial(morph_, cv.MORPH_CLOSE, "CLOSEMorph")
+dilate_morph = partial(morph_, cv.MORPH_DILATE, "DILATEMorph")
+erode_morph = partial(morph_, cv.MORPH_ERODE, "ERODEMorph")
+open_morph = partial(morph_, cv.MORPH_OPEN, "OPENMorph")
 
 
 def gausnoise(s):
@@ -156,7 +200,7 @@ def gausnoise(s):
         sk_img = skimage.util.random_noise(sk_img, mode="gaussian", var=s)
         return img.get_clone(sk_img)
 
-    return (man_func, "GaussianNoise-S" + str(s), {"s": s})
+    return (man_func, ManiFamily.NOISE, "GaussianNoise", {"s": s})
 
 def impulsenoise(p):
     def man_func(img):
@@ -164,17 +208,15 @@ def impulsenoise(p):
         sk_img = skimage.util.random_noise(sk_img, mode="s&p", salt_vs_pepper=p)
         return img.get_clone(sk_img)
 
-    return (man_func, "ImpulseNoise-P" + str(p), {"p": p})
+    return (man_func, ManiFamily.NOISE, "ImpulseNoise", {"p": p})
 
 def poissonnoise():
     def man_func(img):
         sk_img = img.get_sk_image()
-        
-        out = skimage.util.random_noise(sk_img, mode="poisson")
+        sk_img = skimage.util.random_noise(sk_img, mode="poisson")
+        return img.get_clone(sk_img)
 
-        return img.get_clone(out)
-
-    return (man_func, "PoissonNoise", {})
+    return (man_func, ManiFamily.NOISE, "PoissonNoise", {})
 
 def uniformnoise(m):
     def man_func(img):
@@ -183,7 +225,7 @@ def uniformnoise(m):
         sk_img = skimage.util.img_as_uint(sk_img)
         return img.get_clone(sk_img)
 
-    return (man_func, "SpeckleNoise-M" + str(m), {"m": m})
+    return (man_func, ManiFamily.NOISE, "SpeckleNoise", {"m": m})
 
 
 def quantize(c):
@@ -192,7 +234,7 @@ def quantize(c):
         new = pil_img.quantize(c, dither=PIL.Image.NONE)
         return img.get_clone(new)
 
-    return (man_func, "Quantization-C" + str(c), {"c": c})
+    return (man_func, ManiFamily.QUANTIZATION, "Quantization", {"c": c})
 
 def dither():
     def man_func(img):
@@ -200,7 +242,7 @@ def dither():
         new = pil_img.convert(mode="P", dither=PIL.Image.FLOYDSTEINBERG)
         return img.get_clone(new)
 
-    return (man_func, "Dither", {})
+    return (man_func, ManiFamily.QUANTIZATION, "Dither", {})
 
 def autocontrast(c):
     def man_func(img):
@@ -209,7 +251,7 @@ def autocontrast(c):
         new = PIL.ImageOps.autocontrast(new, c*10)
         return img.get_clone(new)
     
-    return (man_func, "AutoContrast-C" + str(c), {"c": c})
+    return (man_func, ManiFamily.RESAMPLING, "AutoContrast", {"c": c})
 
 def clahe(s):
     def man_func(img):
@@ -220,13 +262,12 @@ def clahe(s):
         new = clahe.apply(gray)
         return img.get_clone(new)
     
-    return (man_func, "HistEq-S" + str(s), {"s": s})
+    return (man_func, ManiFamily.RESAMPLING, "HistEq", {"s": s})
 
 
 boxblur_kernels = [29, 11, 13, 15, 17, 19, 25, 27, 21, 23, 3, 7, 5, 9, 33, 31]
 gausblur_kernels = [33, 31, 5, 7, 3, 9, 11, 13, 15, 17, 19, 29, 21, 23, 25, 27]
 medianblur_kernels = [21, 23, 25, 27, 29, 19, 15, 17, 11, 13, 9, 3, 7, 5]
-#TODO: waveletblur
 
 area_resize_factors = [0.95, 0.73, 0.79, 0.36, 0.31, 0.89, 0.84, 0.63, 0.68, 0.25, 0.20, 0.57, 0.52, 0.15, 0.41, 0.47]
 cubic_resize_factors = [0.36, 0.68, 0.63, 0.84, 0.89, 0.31, 0.79, 0.73, 0.95, 0.47, 0.41, 0.15, 0.57, 0.25, 0.20]
@@ -300,7 +341,6 @@ quantization_mans = [quanti_mans, dither_mans]
 resampling_mans = [autocontrast_mans, clahe_mans]
 
 manipulations_tree = [blur_mans, resize_mans, compress_mans, morph_mans, noise_mans, quantization_mans, resampling_mans]
-manipulations_tree = [resize_mans, compress_mans, morph_mans, noise_mans, quantization_mans]
 
 flatten = lambda t: [item for sublist in t for item in sublist]
 manipulations_flat = flatten(map(flatten, manipulations_tree))
@@ -311,18 +351,21 @@ def get_random_manipulation():
     k = random.randint(0, len(manipulations_tree[i][j]) - 1)
     return manipulations_tree[i][j][k]
 
-#for i in range(20):
-#    img_man = Image("data/input.jpg")
-#    img_man.save("data/temp.png")
-#    for _ in range(10):
-#        img_man = Image("data/temp.png")
-#        (man_func, name, pars) = get_random_manipulation()
-#        print(name)
-#        img_man = man_func(img_man)
-#        img_man.save("data/temp.png")
-#    img_man.save(f"data/out_random{i}.png")
+def generate_patches(input_folder, output_folder):
+    files = glob.glob(input_folder + "/*.jpg") + glob.glob(input_folder + "/*.png")
+    
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    
+    for f in files:
+        path, name_ext = os.path.split(f)
+        name, _ = os.path.splitext(name_ext)
+        
+        img = Image(path + "/" + name_ext)
 
-img = Image("data/input.jpg")
-for (man_func, name, pars) in manipulations_flat:
-    img_man = man_func(img)
-    img_man.save(f"data/out_{name}.png")
+        for i, patch in enumerate(img.patches(256, 256)):
+            if patch.intensity_deviation() >= 32:
+                patch.save(f"{output_folder}/{name}{i}.png")
+
+
+generate_patches("data", "data/patches")
