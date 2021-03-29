@@ -175,7 +175,7 @@ def webp_compress(q):
         decoded = cv.imdecode(encoded, 1)
         return img.get_clone(decoded)
     
-    return (man_func, ManiFamily.COMPRESS, "WEBPCompress" + str(q), {"q": q})
+    return (man_func, ManiFamily.COMPRESS, "WEBPCompress", {"q": q})
 
 
 def morph_(morph_op, name, s):
@@ -351,7 +351,7 @@ def get_random_manipulation():
     k = random.randint(0, len(manipulations_tree[i][j]) - 1)
     return manipulations_tree[i][j][k]
 
-def generate_patches(input_folder, output_folder):
+def generate_patches(input_folder, output_folder, use_manipulations = True):
     files = glob.glob(input_folder + "/*.jpg") + glob.glob(input_folder + "/*.png")
     
     if not os.path.exists(output_folder):
@@ -365,7 +365,26 @@ def generate_patches(input_folder, output_folder):
 
         for i, patch in enumerate(img.patches(256, 256)):
             if patch.intensity_deviation() >= 32:
-                patch.save(f"{output_folder}/{name}{i}.png")
+                folder = f"{output_folder}/"
+                if use_manipulations:
+                    man_func, man_family, man_name, man_pars = get_random_manipulation()
+                    folder += get_path_from_manipulation(man_family, man_name, man_pars)
+                    patch = man_func(patch)
+                else:
+                    folder += "none/"
+                folder = folder.replace(".", "")
 
+                if not os.path.exists(folder):
+                    os.makedirs(folder)
+
+                patch.save(folder + name + str(i) + ".png")
+
+def get_path_from_manipulation(family, name, parameters):
+    path = str(family.value) + "/" + name + "/"
+
+    for k, v in parameters.items():
+        path += str(k) + "-" + str(v) + "/"
+
+    return path
 
 generate_patches("data", "data/patches")
