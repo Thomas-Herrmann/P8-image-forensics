@@ -35,3 +35,6 @@ urllib3==1.26.3
 Werkzeug==1.0.1
 wincertstore==0.2
 wrapt==1.12.1
+opencv-python==4.5.1.48
+scikit-image==0.17.2
+Pillow==7.2.0
