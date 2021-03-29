@@ -107,7 +107,7 @@ for (source_image, pan_image, pan_objects), target_image in dsz:
     # if np.average(final_mask)/256 < MAX_INSERT_COVER_RATE:
     #     continue
 
-    # PIL.Image.fromarray(final_crop).show()
+    PIL.Image.fromarray(final_crop).show()
     # PIL.Image.fromarray(final_mask).show()
-    # break
+    break
 print("Resulting time: %s" % (time.time() - t))
