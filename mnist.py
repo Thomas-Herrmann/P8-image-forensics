@@ -1,6 +1,13 @@
 import numpy as np
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow import config
+import AAConv2D as AA
+
+
+gpus = config.list_physical_devices('GPU')
+for gpu in gpus:
+    config.experimental.set_memory_growth(gpu, True)
 
 # Model / data parameters
 num_classes = 10
@@ -29,7 +36,8 @@ model = keras.Sequential(
         keras.Input(shape=input_shape),
         layers.Conv2D(32, kernel_size=(3, 3), activation="relu"),
         layers.MaxPooling2D(pool_size=(2, 2)),
-        layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
+        AA.AAConv2D(32 * 3, 3, 32 * 2, 32 * 2, 4, True), #
+        layers.ReLU(),                                   # layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
         layers.MaxPooling2D(pool_size=(2, 2)),
         layers.Flatten(),
         layers.Dropout(0.5),
