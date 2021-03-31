@@ -11,6 +11,7 @@ BANNED_LABELS = [81, 87, 90, 97, 99, 100, 101, 102, 103, 105, 109, 110, 111, 112
 COCO_PANOPTIC_2017_DATASET_DIRECTORY = "F:\-Users\jespoke\Pycharm\Dataloc"
 REACH_AROUND_INSERT_BOX = 170
 MAX_INSERT_COVER_RATE = 0.30
+DUMMY = (np.zeros((1,), dtype="uint8"), np.zeros((1,), dtype="uint8"), False)
 
 def mask_by_color(image, color):
     mask = image.astype("uint32")
@@ -31,12 +32,13 @@ ds = ds.map(lambda x: (x['image'], x['panoptic_image'], x['panoptic_objects']))
 dsz = tf.data.Dataset.zip((ds, ds.map(lambda img, pan_img, pan_obj: img).shuffle(1000))).prefetch(64)
 
 # For each image in the dataset
-for (source_image, pan_image, pan_objects), target_image in dsz:
+def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_image):
     source_image = source_image.numpy()
     pan_image = pan_image.numpy()
     target_image = target_image.numpy()
 
-    pan_object_feats = zip(pan_objects['label'].numpy(), pan_objects['id'].numpy(), pan_objects['bbox'].numpy())
+    pan_object_feats = zip(pan_label.numpy(), pan_id.numpy(), pan_bbox.numpy())
+    #pan_object_feats = zip(pan_objects['label'].numpy(), pan_objects['id'].numpy(), pan_objects['bbox'].numpy())
     obj_options = list((label, id, bbox) for (label, id, bbox) in pan_object_feats if label not in BANNED_LABELS)
     if obj_options:
         label, id, bbox = rand.choice(obj_options)
@@ -44,15 +46,13 @@ for (source_image, pan_image, pan_objects), target_image in dsz:
         #print(label)
     else:
         # Skip this image if there is nothing but banned labels in it
-        print("Nothing allowed")
-        continue
+        return DUMMY
 
 #   sizes = pan_image.numpy().shape()
     xdim, ydim, _ = source_image.shape
     xdimtarget, ydimtarget, _ = target_image.shape
     if xdimtarget < 256 or ydimtarget < 256:
-        print(target_image.shape)
-        continue
+        return DUMMY
 
     xmin, ymin, xsize, ysize = bbox
     xmin, ymin, xmax, ymax = (math.floor(xdim * xmin), math.floor(ydim * ymin), math.floor(xdim * (xmin + xsize)), math.floor(ydim * (ymin + ysize)))
@@ -61,8 +61,7 @@ for (source_image, pan_image, pan_objects), target_image in dsz:
     pan_croppedimage = pan_image[xmin:xmax, ymin:ymax, :]
     xcropped, ycropped, _ = croppedimage.shape
     if xcropped >= xdimtarget and ycropped >= ydimtarget:
-        print("Skipped due to size mismatch")
-        continue
+        return DUMMY
     xoffset, yoffset = (0 if xdimtarget - xcropped < 0 else (rand.randint(0, xdimtarget - xcropped)), 0 if ydimtarget - ycropped < 0 else (rand.randint(0, ydimtarget - ycropped)))
 
     # Used to be np.zeros, but it needs to be numbers outside the 0-255 range of the elements of RGB
@@ -105,9 +104,15 @@ for (source_image, pan_image, pan_objects), target_image in dsz:
     final_mask = replacement_mask[xoffset:xoffset+256, yoffset:yoffset+256, :]
 
     if np.average(final_mask)/256 < MAX_INSERT_COVER_RATE:
-        continue
+        return DUMMY
 
     # PIL.Image.fromarray(final_crop).show()
     # PIL.Image.fromarray(final_mask).show()
-    # break
-print("Resulting time: %s" % (time.time() - t))
+    return final_crop, final_mask, True
+
+def py_parser_img(source, target):
+    return tf.py_function(image_insert, [source, target], Tout=(tf.resource, tf.resource, tf.bool))
+
+result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.resource, tf.resource, tf.bool)))
+result = result.filter(lambda x, y, bool: bool)
+result = result.map(lambda x, y, bool: (x, y))
