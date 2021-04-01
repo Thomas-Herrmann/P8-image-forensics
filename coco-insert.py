@@ -37,6 +37,8 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     pan_image = pan_image.numpy()
     target_image = target_image.numpy()
 
+    # PIL.Image.fromarray(source_image).show()
+
     pan_object_feats = zip(pan_label.numpy(), pan_id.numpy(), pan_bbox.numpy())
     #pan_object_feats = zip(pan_objects['label'].numpy(), pan_objects['id'].numpy(), pan_objects['bbox'].numpy())
     obj_options = list((label, id, bbox) for (label, id, bbox) in pan_object_feats if label not in BANNED_LABELS)
@@ -110,9 +112,13 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     # PIL.Image.fromarray(final_mask).show()
     return final_crop, final_mask, True
 
-def py_parser_img(source, target):
-    return tf.py_function(image_insert, [source, target], Tout=(tf.resource, tf.resource, tf.bool))
-
-result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.resource, tf.resource, tf.bool)))
+result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.uint8, tf.bool)))
 result = result.filter(lambda x, y, bool: bool)
 result = result.map(lambda x, y, bool: (x, y))
+i = 0
+
+for image, mask in result:
+    PIL.Image.fromarray(image.numpy()).show()
+    i = i+1
+    if i > 3:
+        break
