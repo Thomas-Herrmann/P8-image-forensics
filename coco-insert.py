@@ -115,10 +115,10 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
 result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.uint8, tf.bool)))
 result = result.filter(lambda x, y, bool: bool)
 result = result.map(lambda x, y, bool: (x, y))
-i = 0
 
-for image, mask in result:
-    PIL.Image.fromarray(image.numpy()).show()
-    i = i+1
-    if i > 3:
-        break
+# i = 0
+# for image, mask in result:
+#     PIL.Image.fromarray(image.numpy()).show()
+#     i = i+1
+#     if i > 3:
+#         break
