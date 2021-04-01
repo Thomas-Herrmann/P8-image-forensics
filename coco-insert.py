@@ -36,8 +36,9 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     source_image = source_image.numpy()
     pan_image = pan_image.numpy()
     target_image = target_image.numpy()
+    # pristine_image = target_image
 
-    # PIL.Image.fromarray(source_image).show()
+    # PIL.Image.fromarray(target_image).show()
 
     pan_object_feats = zip(pan_label.numpy(), pan_id.numpy(), pan_bbox.numpy())
     #pan_object_feats = zip(pan_objects['label'].numpy(), pan_objects['id'].numpy(), pan_objects['bbox'].numpy())
@@ -104,12 +105,14 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     yoffset = rand.randint(max(0, min(yoffset - REACH_AROUND_INSERT_BOX, ydimtarget - 256)), max(0, min(ydimtarget - 256, yoffset + ycropped + REACH_AROUND_INSERT_BOX - 256)))
     final_crop = target_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
     final_mask = replacement_mask[xoffset:xoffset+256, yoffset:yoffset+256, :]
+    pristine_crop = pristine_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
 
     if np.average(final_mask)/256 < MAX_INSERT_COVER_RATE:
         return DUMMY
 
     # PIL.Image.fromarray(final_crop).show()
     # PIL.Image.fromarray(final_mask).show()
+    # PIL.Image.fromarray(pristine_crop).show()
     return final_crop, final_mask, True
 
 result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.uint8, tf.bool)))
@@ -119,6 +122,7 @@ result = result.map(lambda x, y, bool: (x, y))
 # i = 0
 # for image, mask in result:
 #     PIL.Image.fromarray(image.numpy()).show()
+#     PIL.Image.fromarray(mask.numpy()).show()
 #     i = i+1
-#     if i > 3:
+#     if i > 1:
 #         break
