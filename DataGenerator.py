@@ -1,4 +1,5 @@
 import tensorflow_datasets as tfds
+import tensorflow_addons as tfa
 import tensorflow as tf
 import cv2 as cv
 import ntpath
@@ -25,12 +26,16 @@ class DataGenerator():
 
     def _make_mask(self):
 
+        rand_gen = tf.random.get_global_generator()
         mask     = self.masks.next()["image"]
-        cropped  = tf.image.random_crop(mask, (self.crop_h, self.crop_w, 3))
-        reshaped = tf.reshape(cropped, (1, self.crop_h, self.crop_w, 3))
-        dilated  = tf.nn.dilation2d(reshaped, tf.zeros((1, 1, 3), tf.uint8), (1, 1, 1, 1), "SAME", "NHWC", (1, 1, 1, 1))
+        reshaped = tf.reshape(mask, (1, mask.shape[0], mask.shape[1], 3))
+        rotated  = tfa.image.rotate(reshaped, rand_gen.uniform([], 0, 360, tf.float32))
+        cropped  = tf.image.random_crop(rotated, (1, self.crop_h, self.crop_w, 3))
+        dilated  = tf.nn.dilation2d(cropped, tf.zeros((1, 1, 3), tf.uint8), (1, 1, 1, 1), "SAME", "NHWC", (1, 1, 1, 1))
         
-        return tf.reshape(dilated, (self.crop_h, self.crop_w, 3))
+        regularized = tf.cast(dilated / 255, tf.int32) * 255
+
+        return tf.reshape(regularized, (self.crop_h, self.crop_w, 3))
 
 
     def _get_cropped_img_pair(self):
