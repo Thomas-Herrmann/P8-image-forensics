@@ -26,13 +26,12 @@ class DataGenerator():
 
     def _make_mask(self):
 
-        rand_gen = tf.random.get_global_generator()
-        mask     = self.masks.next()["image"]
-        reshaped = tf.reshape(mask, (1, mask.shape[0], mask.shape[1], 3))
-        rotated  = tfa.image.rotate(reshaped, rand_gen.uniform([], 0, 360, tf.float32))
-        cropped  = tf.image.random_crop(rotated, (1, self.crop_h, self.crop_w, 3))
-        dilated  = tf.nn.dilation2d(cropped, tf.zeros((1, 1, 3), tf.uint8), (1, 1, 1, 1), "SAME", "NHWC", (1, 1, 1, 1))
-        
+        rand_gen    = tf.random.get_global_generator()
+        mask        = self.masks.next()["image"]
+        reshaped    = tf.reshape(mask, (1, mask.shape[0], mask.shape[1], 3))
+        rotated     = tfa.image.rotate(reshaped, rand_gen.uniform([], 0, 360, tf.float32), fill_mode="reflect")
+        cropped     = tf.image.random_crop(rotated, (1, self.crop_h, self.crop_w, 3))
+        dilated     = tf.nn.dilation2d(cropped, tf.zeros((1, 1, 3), tf.uint8), (1, 1, 1, 1), "SAME", "NHWC", (1, 1, 1, 1))
         regularized = tf.cast(dilated / 255, tf.int32) * 255
 
         return tf.reshape(regularized, (self.crop_h, self.crop_w, 3))
