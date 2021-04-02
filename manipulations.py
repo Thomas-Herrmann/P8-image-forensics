@@ -247,7 +247,7 @@ def dither():
 def autocontrast(c):
     def man_func(img):
         pil_img = img.get_pil_image()
-        new = pil_img.convert(mode="RGB", dither=PIL.Image.FLOYDSTEINBERG)
+        new = pil_img.convert(mode="RGB", dither=PIL.Image.NONE)
         new = PIL.ImageOps.autocontrast(new, c*10)
         return img.get_clone(new)
     
@@ -379,12 +379,60 @@ def generate_patches(input_folder, output_folder, use_manipulations = True):
 
                 patch.save(folder + name + str(i) + ".png")
 
+def generate_manipulated(input_folder, output_folder):
+    files = glob.glob(input_folder + "/*.jpg") + glob.glob(input_folder + "/*.png")
+    num_files = len(files)
+    
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    
+    for i, f in enumerate(files):
+        path, name_ext = os.path.split(f)
+        name, _ = os.path.splitext(name_ext)
+        
+        img = Image(path + "/" + name_ext)
+
+        folder = f"{output_folder}/"
+            
+        man_func, man_family, man_name, man_pars = get_random_manipulation()
+        folder += get_path_from_manipulation(man_family, man_name, man_pars)
+        img = man_func(img)
+        
+        folder = folder.replace(".", "")
+
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+
+        img.save(folder + "/" + name + ".png")
+
+        if i % 500 == 0:
+            print(f"Manipulated {i}/{num_files} ({i/num_files*100}%) images")
+
 def get_path_from_manipulation(family, name, parameters):
-    path = str(family.value) + "/" + name + "/"
+    path = str(family.value) + "-" + name
 
     for k, v in parameters.items():
-        path += str(k) + "-" + str(v) + "/"
+        path += "-" + str(k) + "-" + str(v)
 
     return path
 
-generate_patches("data", "data/patches")
+def convert_jpg_png(input_path, output_path):
+    files = glob.glob(input_path + "/*.jpg")
+    num_files = len(files)
+    
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    for i, f in enumerate(files):
+        path, name_ext = os.path.split(f)
+        name, _ = os.path.splitext(name_ext)
+
+        img = Image(path + "/" + name_ext)
+        img.save(output_path + "/" + name + ".png")
+
+        if i % 500 == 0:
+            print(f"Converted {i}/{num_files} ({i/num_files*100}%) images to png")
+
+    
+#convert_jpg_png("data/train2017", "data/train2017_png")
+generate_manipulated("data/train2017", "data/manipulated")
