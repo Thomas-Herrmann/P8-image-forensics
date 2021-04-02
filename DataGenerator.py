@@ -7,9 +7,11 @@ import ntpath
 
 class DataGenerator():
 
-    def __init__(self, mask_dir_path, man_dir_path, crop_shape=(256, 256)):
+    def __init__(self, mask_dir_path, man_dir_path, crop_shape=(256, 256), batch_size=1):
         
-        self.man_dir_path = man_dir_path
+        self.man_dir_path        = man_dir_path
+        self.batch_size          = batch_size
+        self.crop_h, self.crop_w = crop_shape
 
         self.masks = tfds.folder_dataset.ImageFolder(mask_dir_path)              \
                                         .as_dataset(shuffle_files=True)["masks"] \
@@ -20,21 +22,24 @@ class DataGenerator():
                                        .as_dataset(shuffle_files=True)["manipulated"] \
                                        .repeat()                                      \
                                        .as_numpy_iterator()
-        
-        self.crop_h, self.crop_w = crop_shape
 
 
     def _make_mask(self):
 
-        rand_gen    = tf.random.get_global_generator()
-        mask        = self.masks.next()["image"]
-        reshaped    = tf.reshape(mask, (1, mask.shape[0], mask.shape[1], 3))
-        rotated     = tfa.image.rotate(reshaped, rand_gen.uniform([], 0, 360, tf.float32), fill_mode="reflect")
-        cropped     = tf.image.random_crop(rotated, (1, self.crop_h, self.crop_w, 3))
-        dilated     = tf.nn.dilation2d(cropped, tf.zeros((1, 1, 3), tf.uint8), (1, 1, 1, 1), "SAME", "NHWC", (1, 1, 1, 1))
-        regularized = tf.cast(dilated / 255, tf.int32) * 255
+        loaded_masks = []
 
-        return tf.reshape(regularized, (self.crop_h, self.crop_w, 3))
+        for _ in range(self.batch_size):
+            
+            loaded_mask  = self.masks.next()["image"]
+            loaded_masks += [tf.reshape(loaded_mask, (1, loaded_mask.shape[0], loaded_mask.shape[1], 3))]
+
+        mask        = tf.concat(loaded_masks, 0)
+        rand_gen    = tf.random.get_global_generator()
+        rotated     = tfa.image.rotate(mask, rand_gen.uniform([self.batch_size], 0, 360, tf.float32), fill_mode="reflect")
+        cropped     = tf.image.random_crop(rotated, (self.batch_size, self.crop_h, self.crop_w, 3))
+        dilated     = tf.nn.dilation2d(cropped, tf.zeros((1, 1, 3), tf.uint8), (1, 1, 1, 1), "SAME", "NHWC", (1, 1, 1, 1))
+
+        return tf.cast(dilated / 255, tf.int32) * 255
 
 
     def _get_cropped_img_pair(self):
@@ -53,25 +58,44 @@ class DataGenerator():
         pri_path = ntpath.splitext(ntpath.join(ntpath.join(self.man_dir_path, "pristine"), basename))[0] + ".jpg"
         pri_crop = cropf(cv.cvtColor(cv.imread(pri_path), cv.COLOR_BGR2RGB))
 
-        return pri_crop, man_crop
+        reshapef = lambda img: tf.reshape(img, (1, self.crop_h, self.crop_w, 3))
+
+        return reshapef(pri_crop), reshapef(man_crop)
+
+
+    def _get_cropped_img_pair_batch(self):
+
+        pristines    = []
+        manipulateds = []
+
+        for _ in range(self.batch_size):
+
+            pristine, manipulated = self._get_cropped_img_pair()
+            
+            pristines    += [pristine]
+            manipulateds += [manipulated]
+
+        return tf.concat(pristines, 0), tf.concat(manipulateds, 0)
 
 
     def _join_by_mask(self, one, two, mask):
 
         mapped_neg_mask = tf.cast(mask / 255, tf.int32)
-        mapped_mask     = tf.ones((self.crop_h, self.crop_w, 3), tf.int32) - mapped_neg_mask
+        mapped_mask     = tf.ones((self.batch_size, self.crop_h, self.crop_w, 3), tf.int32) - mapped_neg_mask
 
-        return tf.einsum("ijk, ijk -> ijk", one, mapped_neg_mask) \
-             + tf.einsum("ijk, ijk -> ijk", two, mapped_mask)
+        return tf.math.multiply(tf.cast(one, tf.int32), mapped_neg_mask) + \
+               tf.math.multiply(tf.cast(two, tf.int32), mapped_mask)
 
 
     def next(self):
 
         mask                  = self._make_mask()
-        pristine, manipulated = self._get_cropped_img_pair()
+        pristine, manipulated = self._get_cropped_img_pair_batch()
         combined              = self._join_by_mask(pristine, manipulated, mask)
 
-        return combined, mask
+        splitf = lambda batch: list(map(lambda img: tf.reshape(img, (self.crop_h, self.crop_w, 3)), tf.split(batch, self.batch_size, 0)))
+
+        return splitf(combined), splitf(mask)
 
 
 
