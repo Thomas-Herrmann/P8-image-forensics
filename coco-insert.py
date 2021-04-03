@@ -8,7 +8,7 @@ import math
 import time
 
 BANNED_LABELS = [81, 87, 90, 97, 99, 100, 101, 102, 103, 105, 109, 110, 111, 112, 113, 116, 118, 119, 122, 123, 124, 125, 126, 131, 132]
-COCO_PANOPTIC_2017_DATASET_DIRECTORY = "F:\-Users\jespoke\Pycharm\Dataloc"
+#COCO_PANOPTIC_2017_DATASET_DIRECTORY = "F:\-Users\jespoke\Pycharm\Dataloc"
 REACH_AROUND_INSERT_BOX = 170
 MAX_INSERT_COVER_RATE = 0.30
 DUMMY = (np.zeros((1,), dtype="uint8"), np.zeros((1,), dtype="uint8"), False)
@@ -25,11 +25,6 @@ def color_encoding(image):
 
 def color_encoding_p(pixel):
     return pixel[0] + pixel[1]*256 + pixel[2]*256*256
-
-t = time.time()
-ds = tfds.load('coco/2017_panoptic', data_dir=COCO_PANOPTIC_2017_DATASET_DIRECTORY, download=False, split='train', shuffle_files=True)
-ds = ds.map(lambda x: (x['image'], x['panoptic_image'], x['panoptic_objects']))
-dsz = tf.data.Dataset.zip((ds, ds.map(lambda img, pan_img, pan_obj: img).shuffle(1000))).prefetch(64)
 
 # For each image in the dataset
 def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_image):
@@ -115,9 +110,16 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     # PIL.Image.fromarray(pristine_crop).show()
     return final_crop, final_mask, True
 
-result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.uint8, tf.bool)))
-result = result.filter(lambda x, y, bool: bool)
-result = result.map(lambda x, y, bool: (x, y))
+
+def get_dataset():
+    t = time.time()
+    ds = tfds.load('coco/2017_panoptic', download=False, split='train', shuffle_files=True)
+    ds = ds.map(lambda x: (x['image'], x['panoptic_image'], x['panoptic_objects']))
+    dsz = tf.data.Dataset.zip((ds, ds.map(lambda img, pan_img, pan_obj: img).shuffle(1000))).prefetch(64)
+    result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.uint8, tf.bool)))
+    result = result.filter(lambda x, y, bool: bool)
+    result = result.map(lambda x, y, bool: (x, y))
+    return result
 
 # i = 0
 # for image, mask in result:
