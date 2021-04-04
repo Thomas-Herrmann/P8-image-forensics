@@ -36,9 +36,6 @@ class AAConv2D(tf.keras.layers.Conv2D):
         
         super(AAConv2D, self).build(input_shape)
         
-        #self.kqv.build(input_shape)
-        #self.satt.build(input_shape)
-        
         initializer = tf.random_normal_initializer(self.dkh ** -0.5)
         H, W        = input_shape[1:-1]
 
@@ -46,7 +43,6 @@ class AAConv2D(tf.keras.layers.Conv2D):
         self.r_width  = tf.Variable(initializer(shape = [2 * W - 1, self.dkh], dtype = tf.float32), name="W-POSENC")
 
 
-    #@tf.autograph.experimental.do_not_convert
     def call(self, X, training = None):
         """Performs forward propagation on the layer, and returns the resulting output tensor."""
 
