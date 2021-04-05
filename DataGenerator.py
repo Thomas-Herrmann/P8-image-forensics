@@ -5,7 +5,8 @@ import cv2 as cv
 import ntpath
 from glob import glob
 import os
-import coco_insert 
+import coco_insert
+from manipulations import ManiFamily
 
 class DataGenerator():
 
@@ -108,55 +109,65 @@ PRISTINE_DIR = "/user/student.aau.dk/slund17/tensorflow_datasets/downloads/extra
 
 def transform_mask(mask):
     rand_gen    = tf.random.get_global_generator()
-    rotated     = tfa.image.rotate(mask, rand_gen.uniform([mask.shape[0]], 0, 360, tf.float32), fill_mode="reflect")
-    cropped     = tf.image.random_crop(rotated, (mask.shape[0], *CROP_SHAPE, 3))
-    dilated     = tf.nn.dilation2d(cropped, tf.zeros((1, 1, 1), tf.uint8), (1, 1, 1, 1), "SAME", "NHWC", (1, 1, 1, 1))
-    return tf.math.reduce_max(tf.cast(dilated / 255, tf.int32), axis=-1, keepdims=True) # Reduce RGB dimension to 1 dimensional
+    rotated     = tfa.image.rotate(mask, rand_gen.uniform([tf.shape(mask)[0]], 0, 360, tf.float32), fill_mode="reflect")
+    cropped     = tf.image.random_crop(rotated, (tf.shape(mask)[0], *CROP_SHAPE, 3))
+    dilated     = tf.nn.dilation2d(cropped, tf.zeros((1, 1, 3), tf.uint8), (1, 1, 1, 1), "SAME", "NHWC", (1, 1, 1, 1))
+    return tf.math.reduce_max(tf.cast(dilated / 255, tf.uint8), axis=-1, keepdims=True) # Reduce RGB dimension to 1 dimensional
 
 def get_masks(batch_size):
     mask = tfds.folder_dataset.ImageFolder(MASK_DIR).as_dataset(shuffle_files=True)['train']
     mask = mask.map(lambda x: x['image']).repeat()
     # mask = mask.shuffle(1000) # Do we need to shuffle when shuffle_files=True? 
     mask = mask.batch(batch_size)
-    mask = mask.map(transform_mask)
+    mask = mask.map(transform_mask, num_parallel_calls=tf.data.AUTOTUNE)
     return mask.unbatch()
 
 def to_pristine_path(filename):
-    name = tf.strings.split(filename, ".")[0]
+    name = tf.strings.split(filename, "/")[-1]
+    name = tf.strings.split(name, ".")[0]
     path = PRISTINE_DIR + '/' + name + ".jpg"
     return path
 
 def to_pristine_image(filename):
     path = to_pristine_path(filename)
-    image = tf.keras.preprocessing.image.load_img(path)
-    arr = tf.keras.preprocessing.image.img_to_array(image)
-    return arr
+    image = tf.io.read_file(path)
+    image = tf.image.decode_jpeg(image, channels=3)
+    # convert? #image = tf.image.convert_image_dtype(image, tf.float32)
+
+    #image = tf.keras.preprocessing.image.load_img(path)
+    #arr = tf.keras.preprocessing.image.img_to_array(image)
+    return image
 
 def to_random_crop(manipulated, pristine, label):
     stacked = tf.stack([manipulated, pristine])
     cropped = tf.image.random_crop(stacked, (2, *CROP_SHAPE, 3))
     return (*tf.unstack(cropped), label)
 
-def to_family_label(manipulated, pristine, label):
-    label_map = get_label_map(split, label_offset)
-    return manipulated, pristine, label_map[label]
-
 def get_manip_pristines(split='train', label_offset=1):
     manips = tfds.folder_dataset.ImageFolder(MANIP_DIR).as_dataset(shuffle_files=True)[split]
+
+    #Filter out small images
+    manips = manips.filter(lambda x: tf.shape(x['image'])[0]>CROP_SHAPE[0] and tf.shape(x['image'])[1]>CROP_SHAPE[1])
+    
     manips = manips.map(lambda x: (x['image'], x['image/filename'], x['label']))
+
     #manips = manips.shuffle(10_000) # do we need to shuffle when we have shuffle_files=True?
-    ds = manips.map(lambda manip, filename, label: (manip, to_pristine_image(filename), label))
-    ds = ds.map(to_random_crop)
-    ds = ds.map(to_family_label)
+    ds = manips.map(lambda manip, filename, label: (manip, to_pristine_image(filename), label), deterministic=False, num_parallel_calls=tf.data.AUTOTUNE)
+
+    ds = ds.map(to_random_crop, deterministic=False, num_parallel_calls=tf.data.AUTOTUNE)
+
+    label_map = get_label_map(split, label_offset)
+    ds = ds.map(lambda manip, pristine, label: (manip, pristine, label_map[label]))
+    return ds
 
 def apply_mask(manip_pristine_label, mask):
     manip, pristine, label = manip_pristine_label
     applied = mask*manip + (mask-1)*pristine
-    return applied, mask * label
+    return applied, tf.cast(mask, tf.int32) * label
 
 def get_dataset(batch_size):
-    ds = tf.data.Dataset.zip([get_manip_pristines(label_offset=2), get_masks(batch_size)])
-    ds = ds.map(apply_mask)
+    ds = tf.data.Dataset.zip((get_manip_pristines(label_offset=2), get_masks(batch_size)))
+    ds = ds.map(apply_mask, num_parallel_calls=tf.data.AUTOTUNE)
     #ds = ds.batch(batch_size)
     return ds
 
@@ -165,15 +176,17 @@ def get_label_map(split, label_offset=1): # We map the 385 catagory labels to th
     family_id_map = {family.value:i for i, family in enumerate(ManiFamily)}
     path = MANIP_DIR + "/"+split+"/*"
     names = sorted([os.path.basename(x) for x in glob(path)]) # The default labels are the sorted alphanumerical order
-    families = [name.split['-'][0] for name in names] # folders are named "FAMILY-TYPE-PARAMS..." so we just take the family
+    families = [name.split('-')[0] for name in names] # folders are named "FAMILY-TYPE-PARAMS..." so we just take the family
     ids = [family_id_map[family] + label_offset for family in families] # map to family ids + offset
-    return ids
+    return tf.constant(ids)
 
 
-def get_combined_dataset(batch_size)
-    coco = coco_insert.get_dataset()
-    manip = get_dataset(batch_size/2)
+def get_combined_dataset(batch_size):
+    coco = coco_insert.get_dataset() #.map(lambda x,y: {'x':x, 'y':y})
+    manip = get_dataset(batch_size//2) #.map(lambda x,y: {'x':x, 'y':y})
     # Zip the two datasets and flat map concatenate them to interleave them:
     dataset = tf.data.Dataset.zip((coco, manip)).flat_map(
-        lambda x0, x1: tf.data.Dataset.from_tensors(x0).concatenate(tf.data.Dataset.from_tensors(x1)))
-    dataset.batch(batch_size)
+        lambda x0, x1: tf.data.Dataset.from_tensors((x0,)).concatenate(tf.data.Dataset.from_tensors((x1,))))
+    dataset = dataset.map(lambda x: (x[0], x[1]))
+    dataset = dataset.batch(batch_size)
+    return dataset

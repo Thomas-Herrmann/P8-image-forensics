@@ -99,8 +99,8 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     xoffset = rand.randint(max(0, min(xoffset - REACH_AROUND_INSERT_BOX, xdimtarget - 256)), max(0, min(xdimtarget - 256, xoffset + xcropped + REACH_AROUND_INSERT_BOX - 256)))
     yoffset = rand.randint(max(0, min(yoffset - REACH_AROUND_INSERT_BOX, ydimtarget - 256)), max(0, min(ydimtarget - 256, yoffset + ycropped + REACH_AROUND_INSERT_BOX - 256)))
     final_crop = target_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
-    final_mask = replacement_mask[xoffset:xoffset+256, yoffset:yoffset+256, :]
-    pristine_crop = pristine_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
+    final_mask = replacement_mask[xoffset:xoffset+256, yoffset:yoffset+256, 0:1]
+    # pristine_crop = pristine_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
 
     if np.average(final_mask)/256 < MAX_INSERT_COVER_RATE:
         return DUMMY
@@ -108,17 +108,19 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     # PIL.Image.fromarray(final_crop).show()
     # PIL.Image.fromarray(final_mask).show()
     # PIL.Image.fromarray(pristine_crop).show()
-    return final_crop, final_mask, True
+    #print("Shapes:", final_crop.shape, final_mask.shape)
+    return final_crop, final_mask//255, True
 
 
 def get_dataset():
-    t = time.time()
+    #t = time.time()
     ds = tfds.load('coco/2017_panoptic', download=False, split='train', shuffle_files=True)
     ds = ds.map(lambda x: (x['image'], x['panoptic_image'], x['panoptic_objects']))
     dsz = tf.data.Dataset.zip((ds, ds.map(lambda img, pan_img, pan_obj: img).shuffle(1000))).prefetch(64)
-    result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.uint8, tf.bool)))
+    result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.int32, tf.bool)))
     result = result.filter(lambda x, y, bool: bool)
     result = result.map(lambda x, y, bool: (x, y))
+    result = result.map(lambda x,y: (tf.reshape(x, (256,256,3)), tf.reshape(y, (256,256,1))))
     return result
 
 # i = 0

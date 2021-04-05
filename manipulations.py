@@ -435,4 +435,4 @@ def convert_jpg_png(input_path, output_path):
 
     
 #convert_jpg_png("data/train2017", "data/train2017_png")
-generate_manipulated("data/train2017", "data/manipulated")
+#generate_manipulated("data/train2017", "data/manipulated")
