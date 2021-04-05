@@ -162,12 +162,24 @@ def get_manip_pristines(split='train', label_offset=1):
 
 def apply_mask(manip_pristine_label, mask):
     manip, pristine, label = manip_pristine_label
-    applied = mask*manip + (mask-1)*pristine
+    #applied = mask*manip + (1-mask)*pristine
+    applied = (1-mask)*manip + mask*pristine
     return applied, tf.cast(mask, tf.int32) * label
 
 def get_dataset(batch_size):
     ds = tf.data.Dataset.zip((get_manip_pristines(label_offset=2), get_masks(batch_size)))
     ds = ds.map(apply_mask, num_parallel_calls=tf.data.AUTOTUNE)
+    #ds = ds.batch(batch_size)
+    return ds
+
+def apply_test_mask(manip_pristine_label, mask):
+    manip, pristine, label = manip_pristine_label
+    applied = (1-mask)*manip + mask*pristine
+    return pristine, manip, applied, tf.cast(mask, tf.int32), label
+
+def get_test_dataset():
+    ds = tf.data.Dataset.zip((get_manip_pristines(label_offset=0), get_masks(32)))
+    ds = ds.map(apply_test_mask, num_parallel_calls=tf.data.AUTOTUNE)
     #ds = ds.batch(batch_size)
     return ds
 
