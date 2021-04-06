@@ -345,10 +345,12 @@ manipulations_tree = [blur_mans, resize_mans, compress_mans, morph_mans, noise_m
 flatten = lambda t: [item for sublist in t for item in sublist]
 manipulations_flat = flatten(map(flatten, manipulations_tree))
 
-def get_random_manipulation():
-    i = random.randint(0, len(manipulations_tree) - 1)
-    j = random.randint(0, len(manipulations_tree[i]) - 1)
-    k = random.randint(0, len(manipulations_tree[i][j]) - 1)
+def get_random_manipulation(rand = None):
+    rand = random.Random() if rand is None else rand
+
+    i = rand.randint(0, len(manipulations_tree) - 1)
+    j = rand.randint(0, len(manipulations_tree[i]) - 1)
+    k = rand.randint(0, len(manipulations_tree[i][j]) - 1)
     return manipulations_tree[i][j][k]
 
 def generate_patches(input_folder, output_folder, use_manipulations = True):
@@ -379,34 +381,37 @@ def generate_patches(input_folder, output_folder, use_manipulations = True):
 
                 patch.save(folder + name + str(i) + ".png")
 
-def generate_manipulated(input_folder, output_folder):
+def generate_manipulated(input_folder, output_folder, iterations=1, seed=None):
+    mani_rand = random.Random(seed)
+
     files = glob.glob(input_folder + "/*.jpg") + glob.glob(input_folder + "/*.png")
     num_files = len(files)
     
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
     
-    for i, f in enumerate(files):
-        path, name_ext = os.path.split(f)
-        name, _ = os.path.splitext(name_ext)
-        
-        img = Image(path + "/" + name_ext)
-
-        folder = f"{output_folder}/"
+    for i in range(iterations):
+        for j, f in enumerate(files):
+            path, name_ext = os.path.split(f)
+            name, _ = os.path.splitext(name_ext)
             
-        man_func, man_family, man_name, man_pars = get_random_manipulation()
-        folder += get_path_from_manipulation(man_family, man_name, man_pars)
-        img = man_func(img)
-        
-        folder = folder.replace(".", "")
+            img = Image(path + "/" + name_ext)
 
-        if not os.path.exists(folder):
-            os.makedirs(folder)
+            folder = f"{output_folder}/"
+                
+            man_func, man_family, man_name, man_pars = get_random_manipulation(mani_rand)
+            folder += get_path_from_manipulation(man_family, man_name, man_pars)
+            img = man_func(img)
+            
+            folder = folder.replace(".", "")
 
-        img.save(folder + "/" + name + ".png")
+            if not os.path.exists(folder):
+                os.makedirs(folder)
 
-        if i % 500 == 0:
-            print(f"Manipulated {i}/{num_files} ({i/num_files*100}%) images")
+            img.save(folder + "/" + name + ".png")
+
+            if (j + 1) % 500 == 0:
+                print(f"Iteration {i + 1}/{iterations}: Manipulated {j + 1}/{num_files} ({(j + 1)/num_files*100}%) images")
 
 def get_path_from_manipulation(family, name, parameters):
     path = str(family.value) + "-" + name
@@ -431,8 +436,8 @@ def convert_jpg_png(input_path, output_path):
         img.save(output_path + "/" + name + ".png")
 
         if i % 500 == 0:
-            print(f"Converted {i}/{num_files} ({i/num_files*100}%) images to png")
+            print(f"Converted {i + 1}/{num_files} ({(i + 1)/num_files*100}%) images to png")
 
     
 #convert_jpg_png("data/train2017", "data/train2017_png")
-#generate_manipulated("data/train2017", "data/manipulated")
+#generate_manipulated("data/dataset/pristine", "data/manipulated", 1, 42)
