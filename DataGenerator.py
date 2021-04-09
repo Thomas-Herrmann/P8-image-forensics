@@ -105,7 +105,7 @@ class DataGenerator():
 CROP_SHAPE=(256, 256)
 MANIP_DIR = "data/manipulated"
 MASK_DIR = "data/masks"
-PRISTINE_DIR = "/user/student.aau.dk/slund17/tensorflow_datasets/downloads/extracted/ZIP.images.cocodataset.org_zips_train2017aai7WOpfj5nSSHXyFBbeLp3tMXjpA_H3YD4oO54G2Sk.zip/train2017"
+PRISTINE_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] #"/user/student.aau.dk/slund17/tensorflow_datasets/downloads/extracted/ZIP.images.cocodataset.org_zips_train2017aai7WOpfj5nSSHXyFBbeLp3tMXjpA_H3YD4oO54G2Sk.zip/train2017"
 
 def transform_mask(mask):
     rand_gen    = tf.random.get_global_generator()

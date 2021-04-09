@@ -438,6 +438,9 @@ def convert_jpg_png(input_path, output_path):
         if i % 500 == 0:
             print(f"Converted {i + 1}/{num_files} ({(i + 1)/num_files*100}%) images to png")
 
-    
+
+
 #convert_jpg_png("data/train2017", "data/train2017_png")
-#generate_manipulated("data/dataset/pristine", "data/manipulated", 1, 42)
+def generate_default():
+    PRISTINE_DIR = os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017"
+    generate_manipulated(PRISTINE_DIR, "data/manipulated/train", 1, 42)
