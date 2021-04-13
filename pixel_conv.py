@@ -6,14 +6,15 @@ from DataGenerator import get_combined_dataset
 epochs = 100
 
 image_size = (256, 256)
-batch_size = 128
+batch_size = 256
 
 train_ds = get_combined_dataset(batch_size).repeat()
 
 train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE)
 #val_ds = val_ds.prefetch(buffer_size=batch_size)
 
-down_stack_filters = [64,128,256,512,512,512,512,512]
+#sizes =             [128,64, 32, 16,  8,  4]
+down_stack_filters = [64,128,256,512,512+128]
 up_stack_filters   = reversed(down_stack_filters[:-1])
 KERNEL_SIZE = 3
 
@@ -62,7 +63,7 @@ else:
     )
 model.summary()
 
-
+#exit()
 callbacks = [
     keras.callbacks.ModelCheckpoint("pixel_conv_save_at_{epoch}.tf")
 ]
