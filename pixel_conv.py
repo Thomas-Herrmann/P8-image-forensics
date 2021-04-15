@@ -60,7 +60,7 @@ else:
     model.compile(
         optimizer="adam",
         loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=["accuracy", "AUC", metrics.f1],
+        metrics=["accuracy", metrics.f1],
     )
 model.summary()
 

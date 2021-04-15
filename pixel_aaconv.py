@@ -7,7 +7,7 @@ from DataGenerator import get_combined_dataset
 epochs = 100
 
 image_size = (256, 256)
-batch_size = 128
+batch_size = 64
 
 train_ds = get_combined_dataset(batch_size).repeat()
 train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE)
@@ -66,7 +66,7 @@ else:
     model.compile(
         optimizer="adam",
         loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=["accuracy", "AUC", metrics.f1],
+        metrics=["accuracy", metrics.f1],
     )
 model.summary()
 
