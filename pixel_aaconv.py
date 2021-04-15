@@ -2,11 +2,12 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 import AAConv2D as AA
+import metrics
 from DataGenerator import get_combined_dataset
 epochs = 100
 
 image_size = (256, 256)
-batch_size = 64
+batch_size = 128
 
 train_ds = get_combined_dataset(batch_size).repeat()
 train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE)
@@ -65,7 +66,7 @@ else:
     model.compile(
         optimizer="adam",
         loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=["accuracy"],
+        metrics=["accuracy", "AUC", metrics.f1],
     )
 model.summary()
 
