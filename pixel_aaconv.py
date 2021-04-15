@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 import AAConv2D as AA
+import metrics
 from DataGenerator import get_combined_dataset
 epochs = 100
 
@@ -65,7 +66,7 @@ else:
     model.compile(
         optimizer="adam",
         loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=["accuracy"],
+        metrics=["accuracy", metrics.f1],
     )
 model.summary()
 

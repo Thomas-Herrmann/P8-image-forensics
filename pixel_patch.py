@@ -3,14 +3,16 @@ from tensorflow import keras
 from tensorflow.keras import layers
 #import AAConv2D as AA
 import tensorflow_addons as tfa
+import metrics
 from DataGenerator import get_combined_dataset
+
 epochs = 100
 
 batch_size = 32
 num_epochs = 100
 image_size = 256 
 input_shape = (image_size, image_size, 3)
-patch_size = 8
+patch_size = 8 
 patch_dim = image_size // patch_size
 num_patches = (image_size // patch_size) ** 2
 projection_dim = 256
@@ -19,7 +21,12 @@ transformer_units = [
     projection_dim * 2,
     projection_dim,
 ]  # Size of the transformer layers
-transformer_layers = 8
+
+output_units = [
+    projection_dim * 2,
+    9*patch_size*patch_size
+]
+transformer_layers = 7
 #mlp_head_units = [1024, 512]  # Size of the dense layers of the final classifier
 
 train_ds = get_combined_dataset(batch_size).repeat()
@@ -105,12 +112,18 @@ def make_model(input_shape, num_classes):
         # Skip connection 2.
         encoded_patches = layers.Add()([x3, x2])
 
+    '''
     # Create a [batch_size, projection_dim] tensor.
-    representation = layers.LayerNormalization(epsilon=1e-6)(encoded_patches)
+    representation = layers.BatchNormalization()(encoded_patches)
     x = tf.keras.layers.Reshape((patch_dim, patch_dim, projection_dim))(representation)
     # Classification layer
     initializer = tf.random_normal_initializer(0., 0.02)
     outputs = tf.keras.layers.Conv2DTranspose(num_classes, patch_size, strides=patch_size, kernel_initializer=initializer, padding='same')(x)
+    '''
+
+    representation = layers.BatchNormalization()(encoded_patches)
+    representation = mlp(representation,  hidden_units=output_units, dropout_rate=0)
+    outputs = tf.keras.layers.Reshape((image_size, image_size, num_classes))(representation)
     
     return keras.Model(inputs, outputs)
 
@@ -123,9 +136,11 @@ else:
     model.compile(
         optimizer="adam",
         loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=["accuracy"],
+        metrics=["accuracy", metrics.f1],
     )
-#model.summary()
+model.summary()
+
+#exit()
 
 callbacks = [
     keras.callbacks.ModelCheckpoint("pixel_patch_save_at_{epoch}.tf")
