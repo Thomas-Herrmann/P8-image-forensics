@@ -164,7 +164,7 @@ def apply_mask(manip_pristine_label, mask):
     manip, pristine, label = manip_pristine_label
     #applied = mask*manip + (1-mask)*pristine
     applied = (1-mask)*manip + mask*pristine
-    return applied, tf.cast(mask, tf.int32) * label
+    return applied, tf.cast(1-mask, tf.int32) * label
 
 def get_dataset(batch_size):
     ds = tf.data.Dataset.zip((get_manip_pristines(label_offset=2), get_masks(batch_size)))
@@ -183,6 +183,7 @@ def get_test_dataset():
     #ds = ds.batch(batch_size)
     return ds
 
+
 def get_label_map(split, label_offset=1): # We map the 385 catagory labels to the 7 family labels
     #label_offset is useful when we need a class of no manipulations (offset=1)
     family_id_map = {family.value:i for i, family in enumerate(ManiFamily)}
@@ -197,8 +198,18 @@ def get_combined_dataset(batch_size):
     coco = coco_insert.get_dataset() #.map(lambda x,y: {'x':x, 'y':y})
     manip = get_dataset(batch_size//2) #.map(lambda x,y: {'x':x, 'y':y})
     # Zip the two datasets and flat map concatenate them to interleave them:
-    dataset = tf.data.Dataset.zip((coco, manip)).flat_map(
-        lambda x0, x1: tf.data.Dataset.from_tensors((x0,)).concatenate(tf.data.Dataset.from_tensors((x1,))))
+    dataset = tf.data.Dataset.zip((coco, manip.batch(7))).flat_map(
+        lambda x0, x1: tf.data.Dataset.from_tensors((x0,)).concatenate(tf.data.Dataset.from_tensors((x1,)).unbatch()))
     dataset = dataset.map(lambda x: (x[0], x[1]))
     dataset = dataset.batch(batch_size)
     return dataset
+
+
+#for images, masks in get_combined_dataset(2):
+#    print(".")
+
+
+#for i, (image, mask) in enumerate(get_dataset(4)):
+#    tf.io.write_file(f"m-image{i}.png", tf.io.encode_png(image))
+#    tf.io.write_file(f"m-mask{i}.png", tf.io.encode_png(tf.cast((mask/tf.reduce_max(mask))*255, tf.uint8)))
+#    if i > 4: break
