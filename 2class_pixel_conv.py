@@ -7,7 +7,7 @@ from DataGenerator import get_combined_two_class_dataset
 epochs = 100
 
 image_size = (256, 256)
-batch_size = 32
+batch_size = 128
 
 train_ds = get_combined_two_class_dataset(batch_size).repeat()
 train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE)
