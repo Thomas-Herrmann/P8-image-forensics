@@ -4,7 +4,7 @@ import cv2 as cv
 import PIL
 from manipulations import ManiFamily
 import numpy as np
-
+import metrics
     
 def colored_mask(mask, seed=13):
 
@@ -42,12 +42,11 @@ def make_legends_image(legends):
     return tf.cast(tf.concat([make_col_square(n) for n in range(9)], 0), tf.uint8)
 
 
-def f1(y_true, y_pred):
-    return 1
+
 
 
 if __name__ == "__main__":
-    model  = tf.keras.models.load_model("pixel_aaconv_save_at_2.tf", custom_objects={'f1':lambda x,y:1})
+    model  = tf.keras.models.load_model("pixel_aaconv_save_at_2.tf", custom_objects={'f1':metrics.f1})
     for i in range(10):
         image  = tf.image.decode_png(tf.io.read_file(f"samples/image{i}.png"), channels=3)
 
