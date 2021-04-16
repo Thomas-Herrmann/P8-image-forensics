@@ -7,6 +7,7 @@ from glob import glob
 import os
 import coco_insert
 from manipulations import ManiFamily
+from qualitative_test import colored_mask
 
 class DataGenerator():
 
@@ -166,6 +167,13 @@ def apply_mask(manip_pristine_label, mask):
     applied = (1-mask)*manip + mask*pristine
     return applied, tf.cast(1-mask, tf.int32) * label
 
+def get_two_class_dataset(batch_size):
+    ps = get_manip_pristines(label_offset=2).map(lambda manip, pristine, label: (manip, pristine, 1))
+    ds = tf.data.Dataset.zip((ps, get_masks(batch_size)))
+    ds = ds.map(apply_mask, num_parallel_calls=tf.data.AUTOTUNE)
+    #ds = ds.batch(batch_size)
+    return ds
+
 def get_dataset(batch_size):
     ds = tf.data.Dataset.zip((get_manip_pristines(label_offset=2), get_masks(batch_size)))
     ds = ds.map(apply_mask, num_parallel_calls=tf.data.AUTOTUNE)
@@ -204,12 +212,26 @@ def get_combined_dataset(batch_size):
     dataset = dataset.batch(batch_size)
     return dataset
 
+def get_combined_two_class_dataset(batch_size):
+    coco = coco_insert.get_dataset()
+    manip = get_two_class_dataset(batch_size//2)
+    # Zip the two datasets and flat map concatenate them to interleave them:
+    dataset = tf.data.Dataset.zip((coco, manip.batch(7))).flat_map(
+        lambda x0, x1: tf.data.Dataset.from_tensors((x0,)).concatenate(tf.data.Dataset.from_tensors((x1,)).unbatch()))
+    dataset = dataset.map(lambda x: (x[0], x[1]))
+    dataset = dataset.batch(batch_size)
+    return dataset
 
 #for images, masks in get_combined_dataset(2):
 #    print(".")
-
-
-#for i, (image, mask) in enumerate(get_dataset(4)):
-#    tf.io.write_file(f"m-image{i}.png", tf.io.encode_png(image))
-#    tf.io.write_file(f"m-mask{i}.png", tf.io.encode_png(tf.cast((mask/tf.reduce_max(mask))*255, tf.uint8)))
-#    if i > 4: break
+if __name__ == "__main__":
+    i = 0
+    for images, masks in get_combined_dataset(64):
+        for image, mask in zip(images, masks):
+            tf.io.write_file(f"samples/image{i}.png", tf.io.encode_png(image))
+            c_mask, legends = colored_mask(tf.cast(mask, tf.int64))
+            c_mask = tf.squeeze(c_mask)
+            tf.io.write_file(f"samples/mask{i}.png", tf.io.encode_png(c_mask))
+            tf.io.write_file(f"stitches/stitch{i}.png", tf.io.encode_png(tf.concat([image, c_mask], axis=1)))
+            i += 1
+        if i > 100: break
