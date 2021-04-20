@@ -206,10 +206,10 @@ def get_combined_dataset(batch_size):
     coco = coco_insert.get_dataset() #.map(lambda x,y: {'x':x, 'y':y})
     manip = get_dataset(batch_size//2) #.map(lambda x,y: {'x':x, 'y':y})
     # Zip the two datasets and flat map concatenate them to interleave them:
-    dataset = tf.data.Dataset.zip((coco, manip.batch(7))).flat_map(
+    dataset = tf.data.Dataset.zip((coco, manip.batch(7, drop_remainder=True))).flat_map(
         lambda x0, x1: tf.data.Dataset.from_tensors((x0,)).concatenate(tf.data.Dataset.from_tensors((x1,)).unbatch()))
     dataset = dataset.map(lambda x: (x[0], x[1]))
-    dataset = dataset.batch(batch_size)
+    dataset = dataset.batch(batch_size, drop_remainder=True)
     return dataset
 
 def get_combined_two_class_dataset(batch_size):
@@ -219,8 +219,16 @@ def get_combined_two_class_dataset(batch_size):
     dataset = tf.data.Dataset.zip((coco, manip.batch(7))).flat_map(
         lambda x0, x1: tf.data.Dataset.from_tensors((x0,)).concatenate(tf.data.Dataset.from_tensors((x1,)).unbatch()))
     dataset = dataset.map(lambda x: (x[0], x[1]))
-    dataset = dataset.batch(batch_size)
+    dataset = dataset.batch(batch_size, drop_remainder=True)
     return dataset
+
+def weighted(ds, class_weights):
+    init = tf.lookup.KeyValueTensorInitializer(list(class_weights.keys()), list(class_weights.values()), key_dtype=tf.int32, value_dtype=tf.float32)
+    table = tf.lookup.StaticHashTable(init, default_value=-1)
+    return ds.map(lambda image,mask: (image, mask, table.lookup(mask)))
+
+def get_weighted_two_class_dataset(batch_size, weights):
+    return weighted(get_combined_two_class_dataset(batch_size).map(lambda im, msk: (im, tf.reshape(msk, (batch_size, -1)))), weights)
 
 #for images, masks in get_combined_dataset(2):
 #    print(".")
