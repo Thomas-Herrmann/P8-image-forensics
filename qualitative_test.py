@@ -51,16 +51,14 @@ def split_patches(image, patch_width, patch_height, patch_multiplier = 1):
     num_patches_x = math.ceil(width / patch_width * patch_multiplier)
     num_patches_y = math.ceil(height / patch_height * patch_multiplier)
 
-    delta_x = (width - patch_width) // num_patches_x
-    delta_y = (height - patch_height) // num_patches_y
+    delta_x = (width - patch_width) / (num_patches_x - 1)
+    delta_y = (height - patch_height) / (num_patches_y - 1)
 
     patches = []
     for x in range(num_patches_x):
         for y in range(num_patches_y):
-            nx = x * delta_x
-            ny = y * delta_y
-            if ny+patch_height >= height or nx+patch_width >= width:
-                print(f"{nx}, {ny}, {(width, height)}")
+            nx = math.floor(x * delta_x)
+            ny = math.floor(y * delta_y)
 
             patches.append((nx, ny, image[ny:ny+patch_height, nx:nx+patch_width, :]))
 
