@@ -35,8 +35,8 @@ def make_model(input_shape, num_classes):
 
     skips = list(reversed(skips))
 
-    for size in [680]*2:
-        x = AA.AAConv2D(size, KERNEL_SIZE, size//2, size//2, 4, True)(x)
+    for size in [512]*3:
+        x = AA.AAConv2D(size, KERNEL_SIZE, size//4, size//4, 4, True)(x)
         x = tf.keras.layers.BatchNormalization()(x)
         #x = tf.keras.layers.LeakyReLU()(x)
 
