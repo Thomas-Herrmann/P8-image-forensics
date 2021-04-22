@@ -62,7 +62,7 @@ def make_model(input_shape, num_classes):
 load_from_epoch = None
 
 if load_from_epoch is not None:
-    model = keras.models.load_model(f"2layer_aaconv_save_at_{load_from_epoch}.tf")
+    model = keras.models.load_model(f"3layer_aaconv_save_at_{load_from_epoch}.tf")
 else:
     model = make_model(input_shape=image_size + (3,), num_classes=2)
     model.compile(
@@ -73,7 +73,7 @@ else:
 model.summary()
 #exit()
 callbacks = [
-    keras.callbacks.ModelCheckpoint("2layer_aaconv_save_at_{epoch}.tf")
+    keras.callbacks.ModelCheckpoint("3layer_aaconv_save_at_{epoch}.tf")
 ]
 
 model.fit(
