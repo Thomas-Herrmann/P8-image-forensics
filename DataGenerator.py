@@ -108,15 +108,16 @@ MANIP_DIR = "data/manipulated"
 MASK_DIR = "data/masks"
 PRISTINE_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] #"/user/student.aau.dk/slund17/tensorflow_datasets/downloads/extracted/ZIP.images.cocodataset.org_zips_train2017aai7WOpfj5nSSHXyFBbeLp3tMXjpA_H3YD4oO54G2Sk.zip/train2017"
 
+@tf.function
 def transform_mask(mask):
-    rand_gen    = tf.random.get_global_generator()
-    rotated     = tfa.image.rotate(mask, rand_gen.uniform([tf.shape(mask)[0]], 0, 360, tf.float32), fill_mode="reflect")
-    blurred     = gaussian_blur(tf.cast(rotated, tf.float32), rand_gen.uniform([], 1, 13, dtype=tf.int32), rand_gen.uniform([], 1, 10)) 
-    cropped     = tf.image.random_crop(blurred, (tf.shape(mask)[0], *CROP_SHAPE, 3))
-    dilated     = tf.nn.dilation2d(cropped, tf.zeros((1, 1, 3), tf.float32), (1, 1, 1, 1), "SAME", "NHWC", (1, 3, 3, 1))
-    scaled      = tf.cast(dilated / 255, dtype=tf.float32)
-
-    return tf.math.reduce_max(scaled, axis=-1, keepdims=True) # Reduce RGB dimension to 1 dimensional
+    with tf.device("/gpu:0"):
+        rand_gen    = tf.random.get_global_generator()
+        rotated     = tfa.image.rotate(mask, rand_gen.uniform([tf.shape(mask)[0]], 0, 360, tf.float32), fill_mode="reflect")
+        blurred     = gaussian_blur(tf.cast(rotated, tf.float32), rand_gen.uniform([], 1, 13, dtype=tf.int32), rand_gen.uniform([], 1, 10)) 
+        cropped     = tf.image.random_crop(blurred, (tf.shape(mask)[0], *CROP_SHAPE, 3))
+        dilated     = tf.nn.dilation2d(cropped, tf.zeros((1, 1, 3), tf.float32), (1, 1, 1, 1), "SAME", "NHWC", (1, 3, 3, 1))
+        scaled      = tf.cast(dilated / 255, dtype=tf.float32)
+        return tf.math.reduce_max(scaled, axis=-1, keepdims=True) # Reduce RGB dimension to 1 dimensional
 
 def gaussian_blur(img, kernel_size=11, sigma=5):
     def gauss_kernel(channels, kernel_size, sigma):
@@ -181,8 +182,8 @@ def get_manip_pristines(split='train', label_offset=1):
 def apply_mask(manip_pristine_label, mask):
     manip, pristine, label = manip_pristine_label
     #applied = mask*manip + (1-mask)*pristine
-    applied = (1-mask)*manip + mask*pristine
-    return applied, tf.cast((1-mask)>0, tf.int32) * label
+    applied = (1-mask)*tf.cast(manip, tf.float32) + mask*tf.cast(pristine, tf.float32)
+    return tf.cast(applied, tf.uint8), tf.cast((1-mask)>0, tf.int32) * label
 
 def get_two_class_dataset(batch_size):
     ps = get_manip_pristines(label_offset=2).map(lambda manip, pristine, label: (manip, pristine, 1))
