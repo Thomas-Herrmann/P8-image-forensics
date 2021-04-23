@@ -182,7 +182,7 @@ def apply_mask(manip_pristine_label, mask):
     manip, pristine, label = manip_pristine_label
     #applied = mask*manip + (1-mask)*pristine
     applied = (1-mask)*manip + mask*pristine
-    return applied, tf.cast(1-mask, tf.int32) * label
+    return applied, tf.cast((1-mask)>0, tf.int32) * label
 
 def get_two_class_dataset(batch_size):
     ps = get_manip_pristines(label_offset=2).map(lambda manip, pristine, label: (manip, pristine, 1))
