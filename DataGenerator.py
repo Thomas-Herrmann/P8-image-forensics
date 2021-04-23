@@ -111,9 +111,26 @@ PRISTINE_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extr
 def transform_mask(mask):
     rand_gen    = tf.random.get_global_generator()
     rotated     = tfa.image.rotate(mask, rand_gen.uniform([tf.shape(mask)[0]], 0, 360, tf.float32), fill_mode="reflect")
-    cropped     = tf.image.random_crop(rotated, (tf.shape(mask)[0], *CROP_SHAPE, 3))
-    dilated     = tf.nn.dilation2d(cropped, tf.zeros((1, 1, 3), tf.uint8), (1, 1, 1, 1), "SAME", "NHWC", (1, 1, 1, 1))
-    return tf.math.reduce_max(tf.cast(dilated / 255, tf.uint8), axis=-1, keepdims=True) # Reduce RGB dimension to 1 dimensional
+    blurred     = gaussian_blur(tf.cast(rotated, tf.float32), rand_gen.uniform([], 1, 13, dtype=tf.int32), rand_gen.uniform([], 1, 10)) 
+    cropped     = tf.image.random_crop(blurred, (tf.shape(mask)[0], *CROP_SHAPE, 3))
+    dilated     = tf.nn.dilation2d(cropped, tf.zeros((1, 1, 3), tf.float32), (1, 1, 1, 1), "SAME", "NHWC", (1, 3, 3, 1))
+    scaled      = tf.cast(dilated / 255, dtype=tf.float32)
+
+    return tf.math.reduce_max(scaled, axis=-1, keepdims=True) # Reduce RGB dimension to 1 dimensional
+
+def gaussian_blur(img, kernel_size=11, sigma=5):
+    def gauss_kernel(channels, kernel_size, sigma):
+        ax = tf.cast(tf.range(-kernel_size // 2 + 1, kernel_size // 2 + 1), tf.float32)
+        xx, yy = tf.meshgrid(ax, ax)
+        kernel = tf.exp(-(xx ** 2 + yy ** 2) / (2.0 * sigma ** 2))
+        kernel = kernel / tf.reduce_sum(kernel)
+        kernel = tf.tile(kernel[..., tf.newaxis], [1, 1, channels])
+        return kernel
+
+    gaussian_kernel = gauss_kernel(tf.shape(img)[-1], kernel_size, sigma)
+    gaussian_kernel = gaussian_kernel[..., tf.newaxis]
+
+    return tf.nn.depthwise_conv2d(img, gaussian_kernel, [1, 1, 1, 1], padding="VALID", data_format="NHWC")
 
 def get_masks(batch_size):
     mask = tfds.folder_dataset.ImageFolder(MASK_DIR).as_dataset(shuffle_files=True)['train']
