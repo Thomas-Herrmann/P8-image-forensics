@@ -7,9 +7,6 @@ import numpy as np
 import metrics
 import math
 
-physical_devices = tf.config.list_physical_devices('GPU') 
-tf.config.experimental.set_memory_growth(physical_devices[0], True)
-
 def colored_mask(mask, seed=13):
 
     make_table = lambda ch_dict: tf.lookup.StaticVocabularyTable(tf.lookup.KeyValueTensorInitializer(
@@ -107,9 +104,12 @@ def patch_and_combine(model, image, patch_multiplier = 1):
 
 
 if __name__ == "__main__":
+    physical_devices = tf.config.list_physical_devices('GPU') 
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
     model  = tf.keras.models.load_model("models/new_aaconv_save_at_10.tf", custom_objects={'f1':lambda x,y:1})
 
-    #image  = tf.image.decode_jpeg(tf.io.read_file("data/unknown.png"), channels=3)
+    #image  = tf.image.decode_png(tf.io.read_file("data/unknown.png"), channels=3)
     #out_mask = patch_and_combine(model, image, 5)
     #height, width = out_mask.shape[:2]
     #tf.io.write_file(f"out.png", tf.io.encode_png(tf.reshape(out_mask, [height, width, 3])))
