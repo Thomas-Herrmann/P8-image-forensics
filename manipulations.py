@@ -442,5 +442,13 @@ def convert_jpg_png(input_path, output_path):
 
 #convert_jpg_png("data/train2017", "data/train2017_png")
 def generate_default():
-    PRISTINE_DIR = os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017"
-    generate_manipulated(PRISTINE_DIR, "data/manipulated/train", 1, 42)
+    TRAIN_DIR = os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017"
+    generate_manipulated(TRAIN_DIR, "data/manipulated/train", 1, 42)
+
+def generate_validation():
+    VALID_DIR = os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017"
+    generate_manipulated(VALID_DIR, "data/manipulated/test", 1, 42)
+
+
+if __name__ == "__main__":
+    generate_validation()

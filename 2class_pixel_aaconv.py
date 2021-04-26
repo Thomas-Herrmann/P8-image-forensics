@@ -9,6 +9,7 @@ epochs = 100
 image_size = (256, 256)
 batch_size = 128
 
+
 train_ds = get_combined_two_class_dataset(batch_size).repeat()
 #train_ds = get_weighted_two_class_dataset(batch_size, {0:0.1, 1:1.}).repeat()
 train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE)
@@ -35,8 +36,8 @@ def make_model(input_shape, num_classes):
 
     skips = list(reversed(skips))
 
-    for size in [512]*3:
-        x = AA.AAConv2D(size, KERNEL_SIZE, size//4, size//4, 4, True)(x)
+    for size in [1024]:
+        x = AA.AAConv2D(size, KERNEL_SIZE, size//2, size//2, 4, True)(x)
         x = tf.keras.layers.BatchNormalization()(x)
         #x = tf.keras.layers.LeakyReLU()(x)
 
@@ -62,7 +63,7 @@ def make_model(input_shape, num_classes):
 load_from_epoch = None
 
 if load_from_epoch is not None:
-    model = keras.models.load_model(f"3layer_aaconv_save_at_{load_from_epoch}.tf")
+    model = keras.models.load_model(f"2class_aaconv_save_at_{load_from_epoch}.tf")
 else:
     model = make_model(input_shape=image_size + (3,), num_classes=2)
     model.compile(
@@ -73,7 +74,7 @@ else:
 model.summary()
 #exit()
 callbacks = [
-    keras.callbacks.ModelCheckpoint("3layer_aaconv_save_at_{epoch}.tf")
+    keras.callbacks.ModelCheckpoint("2class_aaconv_save_at_{epoch}.tf")
 ]
 
 model.fit(

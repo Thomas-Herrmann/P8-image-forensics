@@ -112,9 +112,9 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     return final_crop, 1-(final_mask//255), True
 
 
-def get_dataset():
+def get_dataset(split='train'):
     #t = time.time()
-    ds = tfds.load('coco/2017_panoptic', download=False, split='train', shuffle_files=True)
+    ds = tfds.load('coco/2017_panoptic', download=False, split=split, shuffle_files=True)
     ds = ds.map(lambda x: (x['image'], x['panoptic_image'], x['panoptic_objects']))
     dsz = tf.data.Dataset.zip((ds, ds.map(lambda img, pan_img, pan_obj: img).shuffle(1000))).prefetch(64)
     result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.int32, tf.bool)), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)

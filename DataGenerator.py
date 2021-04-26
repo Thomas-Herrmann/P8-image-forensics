@@ -106,8 +106,8 @@ class DataGenerator():
 CROP_SHAPE=(256, 256)
 MANIP_DIR = "data/manipulated"
 MASK_DIR = "data/masks"
-PRISTINE_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] #"/user/student.aau.dk/slund17/tensorflow_datasets/downloads/extracted/ZIP.images.cocodataset.org_zips_train2017aai7WOpfj5nSSHXyFBbeLp3tMXjpA_H3YD4oO54G2Sk.zip/train2017"
-
+TRAIN_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] #"/user/student.aau.dk/slund17/tensorflow_datasets/downloads/extracted/ZIP.images.cocodataset.org_zips_train2017aai7WOpfj5nSSHXyFBbeLp3tMXjpA_H3YD4oO54G2Sk.zip/train2017"
+VAL_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017")[0]
 @tf.function
 def transform_mask(mask):
     with tf.device("/gpu:0"):
@@ -144,11 +144,12 @@ def get_masks(batch_size):
 def to_pristine_path(filename):
     name = tf.strings.split(filename, "/")[-1]
     name = tf.strings.split(name, ".")[0]
-    path = PRISTINE_DIR + '/' + name + ".jpg"
+    directory = TRAIN_DIR if split == "train" else VAL_DIR
+    path = directory + '/' + name + ".jpg"
     return path
 
-def to_pristine_image(filename):
-    path = to_pristine_path(filename)
+def to_pristine_image(filename, split):
+    path = to_pristine_path(filename, split)
     image = tf.io.read_file(path)
     image = tf.image.decode_jpeg(image, channels=3)
     # convert? #image = tf.image.convert_image_dtype(image, tf.float32)
@@ -171,7 +172,7 @@ def get_manip_pristines(split='train', label_offset=1):
     manips = manips.map(lambda x: (x['image'], x['image/filename'], x['label']))
 
     #manips = manips.shuffle(10_000) # do we need to shuffle when we have shuffle_files=True?
-    ds = manips.map(lambda manip, filename, label: (manip, to_pristine_image(filename), label), deterministic=False, num_parallel_calls=tf.data.AUTOTUNE)
+    ds = manips.map(lambda manip, filename, label: (manip, to_pristine_image(filename, split), label), deterministic=False, num_parallel_calls=tf.data.AUTOTUNE)
 
     ds = ds.map(to_random_crop, deterministic=False, num_parallel_calls=tf.data.AUTOTUNE)
 
@@ -192,8 +193,8 @@ def get_two_class_dataset(batch_size):
     #ds = ds.batch(batch_size)
     return ds
 
-def get_dataset(batch_size):
-    ds = tf.data.Dataset.zip((get_manip_pristines(label_offset=2), get_masks(batch_size)))
+def get_dataset(batch_size, split):
+    ds = tf.data.Dataset.zip((get_manip_pristines(label_offset=2, split=split), get_masks(batch_size)))
     ds = ds.map(apply_mask, num_parallel_calls=tf.data.AUTOTUNE)
     #ds = ds.batch(batch_size)
     return ds
@@ -220,9 +221,9 @@ def get_label_map(split, label_offset=1): # We map the 385 catagory labels to th
     return tf.constant(ids)
 
 
-def get_combined_dataset(batch_size):
-    coco = coco_insert.get_dataset() #.map(lambda x,y: {'x':x, 'y':y})
-    manip = get_dataset(batch_size//2) #.map(lambda x,y: {'x':x, 'y':y})
+def get_combined_dataset(batch_size, split='train'):
+    coco = coco_insert.get_dataset(split=split) #.map(lambda x,y: {'x':x, 'y':y})
+    manip = get_dataset(batch_size//2, split=split) #.map(lambda x,y: {'x':x, 'y':y})
     # Zip the two datasets and flat map concatenate them to interleave them:
     dataset = tf.data.Dataset.zip((coco, manip.batch(7, drop_remainder=True))).flat_map(
         lambda x0, x1: tf.data.Dataset.from_tensors((x0,)).concatenate(tf.data.Dataset.from_tensors((x1,)).unbatch()))
@@ -251,6 +252,8 @@ def get_weighted_two_class_dataset(batch_size, weights):
 #for images, masks in get_combined_dataset(2):
 #    print(".")
 if __name__ == "__main__":
+    tf.data.experimental.save(get_combined_dataset(batch_size=64, split='test').unbatch(), "validation")
+    '''
     i = 0
     for images, masks in get_combined_dataset(64):
         for image, mask in zip(images, masks):
@@ -261,3 +264,4 @@ if __name__ == "__main__":
             tf.io.write_file(f"stitches/stitch{i}.png", tf.io.encode_png(tf.concat([image, c_mask], axis=1)))
             i += 1
         if i > 100: break
+    '''
