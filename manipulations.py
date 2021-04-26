@@ -450,5 +450,5 @@ def generate_validation():
     generate_manipulated(VALID_DIR, "data/manipulated/test", 1, 42)
 
 
-if __name__ == "__main__":
+#if __name__ == "__main__":
     #generate_validation()
