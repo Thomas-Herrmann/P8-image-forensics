@@ -141,7 +141,7 @@ def get_masks(batch_size):
     mask = mask.map(transform_mask, num_parallel_calls=tf.data.AUTOTUNE)
     return mask.unbatch()
 
-def to_pristine_path(filename):
+def to_pristine_path(filename, split):
     name = tf.strings.split(filename, "/")[-1]
     name = tf.strings.split(name, ".")[0]
     directory = TRAIN_DIR if split == "train" else VAL_DIR
