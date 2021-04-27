@@ -252,7 +252,7 @@ def get_weighted_two_class_dataset(batch_size, weights):
 #for images, masks in get_combined_dataset(2):
 #    print(".")
 if __name__ == "__main__":
-    #generate_validation()
+    generate_validation()
     path = os.path.abspath("validation")
     tf.data.experimental.save(get_combined_dataset(batch_size=64, split='validation').unbatch(), path)
     '''
