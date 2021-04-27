@@ -10,6 +10,7 @@ import random
 import os
 import os.path
 import glob
+import shutil
 
 class ImageType(Enum):
     NONE = -1
@@ -247,7 +248,7 @@ def dither():
 def autocontrast(c):
     def man_func(img):
         pil_img = img.get_pil_image()
-        new = pil_img.convert(mode="RGB", dither=PIL.Image.FLOYDSTEINBERG)
+        new = pil_img.convert(mode="RGB", dither=PIL.Image.NONE)
         new = PIL.ImageOps.autocontrast(new, c*10)
         return img.get_clone(new)
     
@@ -345,10 +346,12 @@ manipulations_tree = [blur_mans, resize_mans, compress_mans, morph_mans, noise_m
 flatten = lambda t: [item for sublist in t for item in sublist]
 manipulations_flat = flatten(map(flatten, manipulations_tree))
 
-def get_random_manipulation():
-    i = random.randint(0, len(manipulations_tree) - 1)
-    j = random.randint(0, len(manipulations_tree[i]) - 1)
-    k = random.randint(0, len(manipulations_tree[i][j]) - 1)
+def get_random_manipulation(rand = None):
+    rand = random.Random() if rand is None else rand
+
+    i = rand.randint(0, len(manipulations_tree) - 1)
+    j = rand.randint(0, len(manipulations_tree[i]) - 1)
+    k = rand.randint(0, len(manipulations_tree[i][j]) - 1)
     return manipulations_tree[i][j][k]
 
 def generate_patches(input_folder, output_folder, use_manipulations = True):
@@ -379,12 +382,75 @@ def generate_patches(input_folder, output_folder, use_manipulations = True):
 
                 patch.save(folder + name + str(i) + ".png")
 
+def generate_manipulated(input_folder, output_folder, iterations=1, seed=None):
+    mani_rand = random.Random(seed)
+
+    files = glob.glob(input_folder + "/*.jpg") + glob.glob(input_folder + "/*.png")
+    num_files = len(files)
+    
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    
+    for i in range(iterations):
+        for j, f in enumerate(files):
+            path, name_ext = os.path.split(f)
+            name, _ = os.path.splitext(name_ext)
+            
+            img = Image(path + "/" + name_ext)
+
+            folder = f"{output_folder}/"
+                
+            man_func, man_family, man_name, man_pars = get_random_manipulation(mani_rand)
+            folder += get_path_from_manipulation(man_family, man_name, man_pars)
+            img = man_func(img)
+            
+            folder = folder.replace(".", "")
+
+            if not os.path.exists(folder):
+                os.makedirs(folder)
+
+            img.save(folder + "/" + name + ".png")
+
+            if (j + 1) % 500 == 0:
+                print(f"Iteration {i + 1}/{iterations}: Manipulated {j + 1}/{num_files} ({(j + 1)/num_files*100}%) images")
+
 def get_path_from_manipulation(family, name, parameters):
-    path = str(family.value) + "/" + name + "/"
+    path = str(family.value) + "-" + name
 
     for k, v in parameters.items():
-        path += str(k) + "-" + str(v) + "/"
+        path += "-" + str(k) + "-" + str(v)
 
     return path
 
-generate_patches("data", "data/patches")
+def convert_jpg_png(input_path, output_path):
+    files = glob.glob(input_path + "/*.jpg")
+    num_files = len(files)
+    
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    for i, f in enumerate(files):
+        path, name_ext = os.path.split(f)
+        name, _ = os.path.splitext(name_ext)
+
+        img = Image(path + "/" + name_ext)
+        img.save(output_path + "/" + name + ".png")
+
+        if i % 500 == 0:
+            print(f"Converted {i + 1}/{num_files} ({(i + 1)/num_files*100}%) images to png")
+
+
+
+#convert_jpg_png("data/train2017", "data/train2017_png")
+def generate_default():
+    TRAIN_DIR = os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017"
+    generate_manipulated(TRAIN_DIR, "data/manipulated/train", 1, 42)
+
+def generate_validation():
+    VALID_DIR = os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017"
+    shutil.rmtree("data/manipulated/validation")
+    generate_manipulated(VALID_DIR, "data/manipulated/validation", 1, 42)
+
+
+#if __name__ == "__main__":
+    #generate_validation()

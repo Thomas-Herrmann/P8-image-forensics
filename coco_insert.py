@@ -10,11 +10,10 @@ from scipy.ndimage import gaussian_filter
 import time
 
 BANNED_LABELS = [81, 87, 90, 97, 99, 100, 101, 102, 103, 105, 109, 110, 111, 112, 113, 116, 118, 119, 122, 123, 124, 125, 126, 131, 132]
-COCO_PANOPTIC_2017_DATASET_DIRECTORY = "F:\-Users\jespoke\Pycharm\Dataloc"
+#COCO_PANOPTIC_2017_DATASET_DIRECTORY = "F:\-Users\jespoke\Pycharm\Dataloc"
 REACH_AROUND_INSERT_BOX = 170
 MAX_INSERT_COVER_RATE = 0.30
 DUMMY = (np.zeros((1,), dtype="uint8"), np.zeros((1,), dtype="uint8"), False)
-
 
 def mask_by_color(image, color):
     mask = image.astype("uint32")
@@ -33,11 +32,6 @@ def color_encoding(image):
 
 def color_encoding_p(pixel):
     return pixel[0] + pixel[1]*256 + pixel[2]*256*256
-
-t = time.time()
-ds = tfds.load('coco/2017_panoptic', data_dir=COCO_PANOPTIC_2017_DATASET_DIRECTORY, download=False, split='train', shuffle_files=True)
-ds = ds.map(lambda x: (x['image'], x['panoptic_image'], x['panoptic_objects']))
-dsz = tf.data.Dataset.zip((ds, ds.map(lambda img, pan_img, pan_obj: img).shuffle(1000))).prefetch(64)
 
 # For each image in the dataset
 def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_image):
@@ -116,25 +110,32 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     xoffset = rand.randint(max(0, min(xoffset - REACH_AROUND_INSERT_BOX, xdimtarget - 256)), max(0, min(xdimtarget - 256, xoffset + xcropped + REACH_AROUND_INSERT_BOX - 256)))
     yoffset = rand.randint(max(0, min(yoffset - REACH_AROUND_INSERT_BOX, ydimtarget - 256)), max(0, min(ydimtarget - 256, yoffset + ycropped + REACH_AROUND_INSERT_BOX - 256)))
     final_crop = target_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
-    final_mask = replacement_mask[xoffset:xoffset+256, yoffset:yoffset+256, :]
+    final_mask = replacement_mask[xoffset:xoffset+256, yoffset:yoffset+256, 0:1]
     # pristine_crop = pristine_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
 
     if np.average(final_mask)/256 < MAX_INSERT_COVER_RATE:
         return DUMMY
 
-    #PIL.Image.fromarray(final_crop).show()
-    #PIL.Image.fromarray(final_mask).show()
+    # PIL.Image.fromarray(final_crop).show()
+    # PIL.Image.fromarray(final_mask).show()
     # PIL.Image.fromarray(pristine_crop).show()
-    return final_crop, final_mask, True
+    #print("Shapes:", final_crop.shape, final_mask.shape)
+    return final_crop, 1-(final_mask//255), True
 
-result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.uint8, tf.bool)))
-result = result.filter(lambda x, y, bool: bool)
-result = result.map(lambda x, y, bool: (x, y))
 
-#i = 0
-#for image, mask in result:
-#    PIL.Image.fromarray(image.numpy()).show()
-#    PIL.Image.fromarray(mask.numpy()).show()
-#    i = i+1
-#    if i > 1:
-        #break
+def get_dataset(split='train'):
+    #t = time.time()
+    ds = tfds.load('coco/2017_panoptic', download=False, split=split, shuffle_files=True)
+    ds = ds.map(lambda x: (x['image'], x['panoptic_image'], x['panoptic_objects']))
+    dsz = tf.data.Dataset.zip((ds, ds.map(lambda img, pan_img, pan_obj: img).shuffle(1000))).prefetch(64)
+    result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.int32, tf.bool)), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
+    result = result.filter(lambda x, y, bool: bool)
+    result = result.map(lambda x, y, bool: (x, y))
+    result = result.map(lambda x,y: (tf.reshape(x, (256,256,3)), tf.reshape(y, (256,256,1))))
+    return result
+
+
+for image, mask in get_dataset():
+    tf.io.write_file("image.png", tf.io.encode_png(image))
+    tf.io.write_file("mask.png", tf.io.encode_png(tf.cast(mask*255, tf.uint8)))
+    break

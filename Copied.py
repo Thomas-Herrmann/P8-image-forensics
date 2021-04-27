@@ -31,7 +31,7 @@ def combine_heads_2d(inputs):
 def rel_to_abs(x):
     """Converts tensor from relative to aboslute indexing."""
     # [B, Nh, L, 2L-1]
-    B, Nh, L, = shape_list(x)
+    B, Nh, L, _ = shape_list(x)
     # Pad to shift from relative to absolute indexing.
     col_pad = tf.zeros((B, Nh, L, 1))
     x = tf.concat([x, col_pad], axis=3)
@@ -64,8 +64,9 @@ def relative_logits_1d(q, rel_k, H, W, Nh, transpose_mask):
 def relative_logits(q, H, W, Nh, dkh):
     """Compute relative logits."""
     # Relative logits in width dimension first.
-    rel_embeddings_w = tf.get_variable('r_width', shape=(2*W - 1, dkh),
-    initializer=tf.random_normal_initializer(dkh**-0.5))
+    initializer=tf.random_normal_initializer(dkh**-0.5)
+    #initializer(shape = [2 * H - 1, self.dkh], dtype = tf.float32), name="H-POSENC"
+    rel_embeddings_w = tf.Variable(initializer(shape=(2*W - 1, dkh)))
     # [B, Nh, HW, HW]
     rel_logits_w = relative_logits_1d(q, rel_embeddings_w, H, W, Nh, [0, 1, 2, 4, 3, 5])
     # Relative logits in height dimension next.
@@ -73,7 +74,8 @@ def relative_logits(q, H, W, Nh, dkh):
     # 2) repeat the above steps and
     # 3) transpose to eventually put the logits
     # in their right positions.
-    rel_embeddings_h = tf.get_variable('r_height', shape=(2 * H - 1, dkh), initializer=tf.random_normal_initializer(dkh**-0.5))
+    #rel_embeddings_h = tf.compat.v1.get_variable('r_height', shape=(2 * H - 1, dkh), initializer=tf.random_normal_initializer(dkh**-0.5))
+    rel_embeddings_h = tf.Variable(initializer(shape=(2 * H - 1, dkh)))
     # [B, Nh, HW, HW]
     rel_logits_h = relative_logits_1d(tf.transpose(q, [0, 1, 3, 2, 4]), rel_embeddings_h, W, H, Nh, [0, 1, 4, 2, 5, 3])
     return rel_logits_h, rel_logits_w
@@ -86,7 +88,7 @@ def self_attention_2d(inputs, dk, dv, Nh, relative=True):
     dvh = dv // Nh
     flatten_hw = lambda x, d: tf.reshape(x, [-1, Nh, H*W, d])
     # Compute q, k, v
-    kqv = tfc.layers.conv2d(inputs, 2 * dk + dv, 1)
+    kqv = tf.keras.layers.Conv2D(2 * dk + dv, 1)(inputs)
     k, q, v = tf.split(kqv, [dk, dk, dv], axis=3)
     q *= dkh ** -0.5 # scaled dot-product
     # After splitting, shape is [B, Nh, H, W, dkh or dvh]
@@ -105,12 +107,12 @@ def self_attention_2d(inputs, dk, dv, Nh, relative=True):
     attn_out = tf.reshape(attn_out, [-1, Nh, H, W, dvh])
     attn_out = combine_heads_2d(attn_out)
     # Project heads
-    attn_out = tfc.layers.conv2d(attn_out, dv, 1)
+    attn_out = tf.keras.layers.Conv2D(dv, 1)(attn_out)
     return attn_out
 
 
 def augmented_conv2d(X, Fout, k, dk, dv, Nh, relative):
-    conv_out = tfc.layers.conv2d(inputs=X, filters=Fout - dv, kernel_size=k, padding='same')
+    conv_out = tf.keras.layers.Conv2D(filters=Fout - dv, kernel_size=k, padding='same')(X)
     attn_out = self_attention_2d(X, dk, dv, Nh, relative=relative)
     return tf.concat([conv_out, attn_out], axis=3)
 

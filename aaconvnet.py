@@ -2,11 +2,12 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 import AAConv2D as AA
+import math
 from glob import glob
 epochs = 100
 
 image_size = (256, 256)
-batch_size = 64
+batch_size = 32
 
 neg = len(glob("dataset/real/*"))
 pos = len(glob("dataset/fake/*"))
@@ -68,25 +69,45 @@ def make_model(input_shape, num_classes):
 
     previous_block_activation = x  # Set aside residual
 
-    for size in [64, 128, 256, 384]:
+    for size in [128, 256]:
         x = layers.Activation("relu")(x)
-        x = AA.AAConv2D(size, 3, size//2, size//2, 4, True)(x)
-        #x = layers.SeparableConv2D(size, 3, padding="same")(x)
+        x = layers.SeparableConv2D(size, 3, padding="same")(x)
         x = layers.BatchNormalization()(x)
 
         x = layers.Activation("relu")(x)
-        x = AA.AAConv2D(size, 3, size//2, size//2, 4, True)(x)
-        #x = layers.SeparableConv2D(size, 3, padding="same")(x)
+        x = layers.SeparableConv2D(size, 3, padding="same")(x)
         x = layers.BatchNormalization()(x)
 
-        x = layers.MaxPooling2D(4, strides=4, padding="same")(x)
+        x = layers.MaxPooling2D(3, strides=2, padding="same")(x)
 
         # Project residual
-        residual = layers.Conv2D(size, 1, strides=4, padding="same")(
+        residual = layers.Conv2D(size, 1, strides=2, padding="same")(
             previous_block_activation
         )
         x = layers.add([x, residual])  # Add back residual
         previous_block_activation = x  # Set aside next residual
+
+    x = layers.Activation("relu")(x)
+
+    for size in [512, 728]:
+        
+        x = AA.AAConv2D(size, 3, size//2, size//2, 4, True)(x)
+        #x = layers.SeparableConv2D(size, 3, padding="same")(x)
+        x = layers.BatchNormalization()(x)
+
+        #x = layers.Activation("relu")(x)
+        x = AA.AAConv2D(size, 3, size//2, size//2, 4, True)(x)
+        #x = layers.SeparableConv2D(size, 3, padding="same")(x)
+        x = layers.BatchNormalization()(x)
+
+        x = layers.MaxPooling2D(3, strides=2, padding="same")(x)
+
+        # Project residual
+        #residual = layers.Conv2D(size, 1, strides=4, padding="same")(
+        #    previous_block_activation
+        #)
+        #x = layers.add([x, residual])  # Add back residual
+        #previous_block_activation = x  # Set aside next residual
 
     #x = AA.AAConv2D(512, 3, 512//2, 512//2, 4, True)(x)
     x = layers.SeparableConv2D(1024, 3, padding="same")(x)
@@ -108,7 +129,7 @@ def make_model(input_shape, num_classes):
 load_from_epoch = None
 
 if load_from_epoch is not None:
-    model = keras.models.load_model(f"save_at_{load_from_epoch}.h5")
+    model = keras.models.load_model(f"aaconv_save_at_{load_from_epoch}.tf")
 else:
     model = make_model(input_shape=image_size + (3,), num_classes=2)
     model.compile(
@@ -118,8 +139,17 @@ else:
     )
 model.summary()
 
+def step_decay(epoch):
+   initial_lrate = 1e-3
+   drop = 0.5
+   epochs_drop = 10.0
+   lrate = initial_lrate * math.pow(drop,  
+           math.floor((1+epoch)/epochs_drop))
+   return lrate
+
 callbacks = [
-    keras.callbacks.ModelCheckpoint("aaconv_save_at_{epoch}.h5"),
+    keras.callbacks.ModelCheckpoint("aaconv_save_at_{epoch}.tf"),
+    keras.callbacks.LearningRateScheduler(step_decay)
 ]
 
 model.fit(

@@ -5,7 +5,7 @@ from glob import glob
 epochs = 100
 
 image_size = (256, 256)
-batch_size = 64
+batch_size = 32
 
 neg = len(glob("dataset/real/*"))
 pos = len(glob("dataset/fake/*"))
@@ -76,10 +76,10 @@ def make_model(input_shape, num_classes):
         x = layers.SeparableConv2D(size, 3, padding="same")(x)
         x = layers.BatchNormalization()(x)
 
-        x = layers.MaxPooling2D(4, strides=4, padding="same")(x)
+        x = layers.MaxPooling2D(3, strides=2, padding="same")(x)
 
         # Project residual
-        residual = layers.Conv2D(size, 1, strides=4, padding="same")(
+        residual = layers.Conv2D(size, 1, strides=2, padding="same")(
             previous_block_activation
         )
         x = layers.add([x, residual])  # Add back residual
@@ -122,5 +122,5 @@ callbacks = [
 
 
 model.fit(
-    train_ds, epochs=epochs, callbacks=callbacks, validation_data=val_ds, class_weight=class_weight, initial_epoch=load_from_epoch,
+    train_ds, epochs=epochs, callbacks=callbacks, validation_data=val_ds, class_weight=class_weight, initial_epoch=load_from_epoch or 0,
 )
