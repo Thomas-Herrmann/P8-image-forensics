@@ -5,6 +5,8 @@ import PIL
 import tensorflow_datasets as tfds
 import random as rand
 import math
+import scipy
+from scipy.ndimage import gaussian_filter
 import time
 
 BANNED_LABELS = [81, 87, 90, 97, 99, 100, 101, 102, 103, 105, 109, 110, 111, 112, 113, 116, 118, 119, 122, 123, 124, 125, 126, 131, 132]
@@ -13,10 +15,16 @@ REACH_AROUND_INSERT_BOX = 170
 MAX_INSERT_COVER_RATE = 0.30
 DUMMY = (np.zeros((1,), dtype="uint8"), np.zeros((1,), dtype="uint8"), False)
 
+
 def mask_by_color(image, color):
     mask = image.astype("uint32")
     mask = color_encoding(mask)
-    mask = np.where(mask == color, np.zeros(mask.shape, "uint8"), np.full_like(mask, 255, "uint8"))
+    mask = np.where(mask == color, np.zeros(mask.shape, "uint32"), np.full_like(mask, 255, "uint32"))
+    mask = gaussian_filter(mask, sigma=rand.uniform(0, 20), truncate=0.5)
+    #mask = np.array([min((thing*2), 255) for thing in maskmask])
+    vectorBlowup = np.vectorize(lambda x: min(x * 2, 255))
+    mask = vectorBlowup(mask)
+    #mask = np.where(mask == 0, maskmask, mask)
     mask = mask[:, :, np.newaxis]
     return np.append(mask, np.append(mask, mask, axis=2), axis=2)
 
@@ -38,7 +46,9 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     target_image = target_image.numpy()
     # pristine_image = target_image
 
-    # PIL.Image.fromarray(target_image).show()
+    #PIL.Image.fromarray(source_image).show()
+    #PIL.Image.fromarray(target_image).show()
+    #PIL.Image.fromarray(pan_image).show()
 
     pan_object_feats = zip(pan_label.numpy(), pan_id.numpy(), pan_bbox.numpy())
     #pan_object_feats = zip(pan_objects['label'].numpy(), pan_objects['id'].numpy(), pan_objects['bbox'].numpy())
@@ -88,7 +98,9 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     #         color = unique
 
     replacement_mask = mask_by_color(pan_insert_image, color)
-    target_image = np.where(replacement_mask == 0, insert_image, target_image)
+    #target_image = np.where(replacement_mask == 0, insert_image, target_image)
+    target_image = np.array(list([((ti*rm)+(ii*(255-rm)))/255 for (ti, ii, rm) in zip(target_image, insert_image, replacement_mask)])).reshape(target_image.shape)
+    replacement_mask = replacement_mask.astype("uint8")
 
     # x = 0
     # y = 0
@@ -105,13 +117,13 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     yoffset = rand.randint(max(0, min(yoffset - REACH_AROUND_INSERT_BOX, ydimtarget - 256)), max(0, min(ydimtarget - 256, yoffset + ycropped + REACH_AROUND_INSERT_BOX - 256)))
     final_crop = target_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
     final_mask = replacement_mask[xoffset:xoffset+256, yoffset:yoffset+256, :]
-    pristine_crop = pristine_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
+    # pristine_crop = pristine_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
 
     if np.average(final_mask)/256 < MAX_INSERT_COVER_RATE:
         return DUMMY
 
-    # PIL.Image.fromarray(final_crop).show()
-    # PIL.Image.fromarray(final_mask).show()
+    #PIL.Image.fromarray(final_crop).show()
+    #PIL.Image.fromarray(final_mask).show()
     # PIL.Image.fromarray(pristine_crop).show()
     return final_crop, final_mask, True
 
@@ -119,10 +131,10 @@ result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0],
 result = result.filter(lambda x, y, bool: bool)
 result = result.map(lambda x, y, bool: (x, y))
 
-# i = 0
-# for image, mask in result:
-#     PIL.Image.fromarray(image.numpy()).show()
-#     PIL.Image.fromarray(mask.numpy()).show()
-#     i = i+1
-#     if i > 1:
-#         break
+#i = 0
+#for image, mask in result:
+#    PIL.Image.fromarray(image.numpy()).show()
+#    PIL.Image.fromarray(mask.numpy()).show()
+#    i = i+1
+#    if i > 1:
+        #break
