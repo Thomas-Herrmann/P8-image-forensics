@@ -10,6 +10,7 @@ import random
 import os
 import os.path
 import glob
+import shutil
 
 class ImageType(Enum):
     NONE = -1
@@ -447,7 +448,8 @@ def generate_default():
 
 def generate_validation():
     VALID_DIR = os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017"
-    generate_manipulated(VALID_DIR, "data/manipulated/test", 1, 42)
+    shutil.rmtree("data/manipulated/validation")
+    generate_manipulated(VALID_DIR, "data/manipulated/validation", 1, 42)
 
 
 #if __name__ == "__main__":
