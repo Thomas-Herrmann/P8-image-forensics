@@ -173,7 +173,7 @@ def get_manip_pristines(split='train', label_offset=1):
 
     #manips = manips.shuffle(10_000) # do we need to shuffle when we have shuffle_files=True?
     ds = manips.map(lambda manip, filename, label: (manip, to_pristine_image(filename, split), label), deterministic=False, num_parallel_calls=tf.data.AUTOTUNE)
-
+    ds = manips.filter(lambda x,y,label: tf.shape(x) == tf.shape(y))
     ds = ds.map(to_random_crop, deterministic=False, num_parallel_calls=tf.data.AUTOTUNE)
 
     label_map = get_label_map(split, label_offset)
@@ -255,7 +255,7 @@ if __name__ == "__main__":
     #generate_validation()
     #path = os.path.abspath("validation")
     #tf.data.experimental.save(
-    for image, mask in get_manip_pristines(split='validation'):
+    for image, mask, label in get_manip_pristines(split='validation'):
         pass
     #, path)
     '''
