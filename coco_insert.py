@@ -5,10 +5,12 @@ import PIL
 import tensorflow_datasets as tfds
 import random as rand
 import math
+import scipy
+from scipy.ndimage import gaussian_filter
 import time
 
 BANNED_LABELS = [81, 87, 90, 97, 99, 100, 101, 102, 103, 105, 109, 110, 111, 112, 113, 116, 118, 119, 122, 123, 124, 125, 126, 131, 132]
-#COCO_PANOPTIC_2017_DATASET_DIRECTORY = "F:\-Users\jespoke\Pycharm\Dataloc"
+DATASET_DIRECTORY = None
 REACH_AROUND_INSERT_BOX = 170
 MAX_INSERT_COVER_RATE = 0.30
 DUMMY = (np.zeros((1,), dtype="uint8"), np.zeros((1,), dtype="uint8"), False)
@@ -16,7 +18,12 @@ DUMMY = (np.zeros((1,), dtype="uint8"), np.zeros((1,), dtype="uint8"), False)
 def mask_by_color(image, color):
     mask = image.astype("uint32")
     mask = color_encoding(mask)
-    mask = np.where(mask == color, np.zeros(mask.shape, "uint8"), np.full_like(mask, 255, "uint8"))
+    mask = np.where(mask == color, np.zeros(mask.shape, "uint32"), np.full_like(mask, 255, "uint32"))
+    mask = gaussian_filter(mask, sigma=rand.uniform(0, 20), truncate=0.5)
+    #mask = np.array([min((thing*2), 255) for thing in maskmask])
+    vectorBlowup = np.vectorize(lambda x: min(x * 2, 255))
+    mask = vectorBlowup(mask)
+    #mask = np.where(mask == 0, maskmask, mask)
     mask = mask[:, :, np.newaxis]
     return np.append(mask, np.append(mask, mask, axis=2), axis=2)
 
@@ -33,7 +40,9 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     target_image = target_image.numpy()
     # pristine_image = target_image
 
-    # PIL.Image.fromarray(target_image).show()
+    #PIL.Image.fromarray(source_image).show()
+    #PIL.Image.fromarray(target_image).show()
+    #PIL.Image.fromarray(pan_image).show()
 
     pan_object_feats = zip(pan_label.numpy(), pan_id.numpy(), pan_bbox.numpy())
     #pan_object_feats = zip(pan_objects['label'].numpy(), pan_objects['id'].numpy(), pan_objects['bbox'].numpy())
@@ -83,7 +92,9 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     #         color = unique
 
     replacement_mask = mask_by_color(pan_insert_image, color)
-    target_image = np.where(replacement_mask == 0, insert_image, target_image)
+    #target_image = np.where(replacement_mask == 0, insert_image, target_image)
+    target_image = np.array(list([((ti*rm)+(ii*(255-rm)))/255 for (ti, ii, rm) in zip(target_image, insert_image, replacement_mask)])).reshape(target_image.shape)
+    replacement_mask = replacement_mask.astype("uint8")
 
     # x = 0
     # y = 0
@@ -114,7 +125,7 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
 
 def get_dataset(split='train'):
     #t = time.time()
-    ds = tfds.load('coco/2017_panoptic', download=False, split=split, shuffle_files=True)
+    ds = tfds.load('coco/2017_panoptic', data_dir=DATASET_DIRECTORY, download=False, split=split, shuffle_files=True)
     ds = ds.map(lambda x: (x['image'], x['panoptic_image'], x['panoptic_objects']))
     dsz = tf.data.Dataset.zip((ds, ds.map(lambda img, pan_img, pan_obj: img).shuffle(1000))).prefetch(64)
     result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.int32, tf.bool)), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
