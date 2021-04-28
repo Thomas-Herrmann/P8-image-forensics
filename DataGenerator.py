@@ -255,7 +255,7 @@ if __name__ == "__main__":
     #generate_validation()
     #path = os.path.abspath("validation")
     #tf.data.experimental.save(
-    for image, mask in get_combined_dataset(batch_size=64, split='validation'):
+    for image, mask in get_manip_pristines(split='validation'):
         pass
     #, path)
     '''
