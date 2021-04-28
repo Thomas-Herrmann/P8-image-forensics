@@ -173,10 +173,10 @@ def get_manip_pristines(split='train', label_offset=1):
 
     #manips = manips.shuffle(10_000) # do we need to shuffle when we have shuffle_files=True?
     ds = manips.map(lambda manip, filename, label: (manip, to_pristine_image(filename, split), label), deterministic=False, num_parallel_calls=tf.data.AUTOTUNE)
-    ds = manips.filter(lambda x,y,label: tf.shape(x) == tf.shape(y))
+    #ds = ds.filter(lambda x,y,label: tf.reduce_all(tf.shape(x) == tf.shape(y)))
     ds = ds.map(to_random_crop, deterministic=False, num_parallel_calls=tf.data.AUTOTUNE)
 
-    label_map = get_label_map(split, label_offset)
+    label_map = get_label_map('train', label_offset)
     ds = ds.map(lambda manip, pristine, label: (manip, pristine, label_map[label]))
     return ds
 
@@ -218,6 +218,7 @@ def get_label_map(split, label_offset=1): # We map the 385 catagory labels to th
     names = sorted([os.path.basename(x) for x in glob(path)]) # The default labels are the sorted alphanumerical order
     families = [name.split('-')[0] for name in names] # folders are named "FAMILY-TYPE-PARAMS..." so we just take the family
     ids = [family_id_map[family] + label_offset for family in families] # map to family ids + offset
+    #print("Starting with ", len(ids), "ids")
     return tf.constant(ids)
 
 
@@ -249,15 +250,30 @@ def weighted(ds, class_weights):
 def get_weighted_two_class_dataset(batch_size, weights):
     return weighted(get_combined_two_class_dataset(batch_size).map(lambda im, msk: (im, tf.reshape(msk, (batch_size, -1)))), weights)
 
+
+def get_valid_dataset(batch_size):
+    return tf.data.experimental.load(path, (tf.TensorSpec(shape=(256,256,3), dtype=tf.uint8), tf.TensorSpec(shape=(256,256,1), dtype=tf.int32))).batch(batch_size)
+
+def get_two_class_valid_dataset(batch_size):
+    return tf.data.experimental.load(path, (tf.TensorSpec(shape=(256,256,3), dtype=tf.uint8), tf.TensorSpec(shape=(256,256,1), dtype=tf.int32))).map(lambda image, mask: (image, tf.cast(mask>0, tf.int32))).batch(batch_size)
+
+
 #for images, masks in get_combined_dataset(2):
 #    print(".")
 if __name__ == "__main__":
     #generate_validation()
-    #path = os.path.abspath("validation")
-    #tf.data.experimental.save(
-    for image, mask, label in get_manip_pristines(split='validation'):
-        pass
-    #, path)
+    #get_label_map("train")
+    #get_label_map("validation")
+    #exit()
+
+    path = os.path.abspath("validation")
+    ds = get_two_class_valid_dataset(256)
+
+    for epoch in range(5, 105, 5):
+        model = tf.keras.models.load_model(f"2class_aaconv_save_at_{epoch}.tf")
+        print("Epoch", epoch)
+        model.evaluate(ds)
+    #tf.data.experimental.save(get_combined_dataset(128, split='validation').unbatch(), path)
     '''
     i = 0
     for images, masks in get_combined_dataset(64):
