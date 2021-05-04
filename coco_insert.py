@@ -9,6 +9,8 @@ import scipy
 from scipy.ndimage import gaussian_filter
 import time
 
+t = time.time()
+
 BANNED_LABELS = [81, 87, 90, 97, 99, 100, 101, 102, 103, 105, 109, 110, 111, 112, 113, 116, 118, 119, 122, 123, 124, 125, 126, 131, 132]
 DATASET_DIRECTORY = None
 REACH_AROUND_INSERT_BOX = 170
@@ -19,10 +21,9 @@ def mask_by_color(image, color):
     mask = image.astype("uint32")
     mask = color_encoding(mask)
     mask = np.where(mask == color, np.zeros(mask.shape, "uint32"), np.full_like(mask, 255, "uint32"))
-    mask = gaussian_filter(mask, sigma=rand.uniform(0, 20), truncate=0.5)
-    #mask = np.array([min((thing*2), 255) for thing in maskmask])
-    vectorBlowup = np.vectorize(lambda x: min(x * 2, 255))
-    mask = vectorBlowup(mask)
+    #mask = gaussian_filter(mask, sigma=rand.uniform(0, 20), truncate=0.5)
+    #vectorBlowup = np.vectorize(lambda x: min(x * 2, 255))
+    #mask = vectorBlowup(mask)
     #mask = np.where(mask == 0, maskmask, mask)
     mask = mask[:, :, np.newaxis]
     return np.append(mask, np.append(mask, mask, axis=2), axis=2)
@@ -93,8 +94,8 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
 
     replacement_mask = mask_by_color(pan_insert_image, color)
     #target_image = np.where(replacement_mask == 0, insert_image, target_image)
-    target_image = np.array(list([((ti*rm)+(ii*(255-rm)))/255 for (ti, ii, rm) in zip(target_image, insert_image, replacement_mask)])).reshape(target_image.shape)
-    replacement_mask = replacement_mask.astype("uint8")
+    #target_image = np.array(list([((ti*rm)+(ii*(255-rm)))/255 for (ti, ii, rm) in zip(target_image, insert_image, replacement_mask)])).reshape(target_image.shape)
+    #replacement_mask = replacement_mask.astype("uint8")
 
     # x = 0
     # y = 0
@@ -109,12 +110,19 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     # Final crop
     xoffset = rand.randint(max(0, min(xoffset - REACH_AROUND_INSERT_BOX, xdimtarget - 256)), max(0, min(xdimtarget - 256, xoffset + xcropped + REACH_AROUND_INSERT_BOX - 256)))
     yoffset = rand.randint(max(0, min(yoffset - REACH_AROUND_INSERT_BOX, ydimtarget - 256)), max(0, min(ydimtarget - 256, yoffset + ycropped + REACH_AROUND_INSERT_BOX - 256)))
-    final_crop = target_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
+    final_target = target_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
+    final_insert = insert_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
     final_mask = replacement_mask[xoffset:xoffset+256, yoffset:yoffset+256, 0:1]
     # pristine_crop = pristine_image[xoffset:xoffset+256, yoffset:yoffset+256, :]
 
     if np.average(final_mask)/256 < MAX_INSERT_COVER_RATE:
         return DUMMY
+
+    final_mask = gaussian_filter(final_mask, sigma=rand.uniform(0, 20), truncate=0.5)
+    vectorBlowup = np.vectorize(lambda x: min(x * 2, 255))
+    final_mask = vectorBlowup(final_mask)
+    final_crop = np.array(list([((ti*rm)+(ii*(255-rm)))/255 for (ti, ii, rm) in zip(final_target, final_insert, final_mask)])).reshape(final_target.shape)
+    final_mask = final_mask.astype("uint8")
 
     # PIL.Image.fromarray(final_crop).show()
     # PIL.Image.fromarray(final_mask).show()
@@ -128,14 +136,17 @@ def get_dataset(split='train'):
     ds = tfds.load('coco/2017_panoptic', data_dir=DATASET_DIRECTORY, download=False, split=split, shuffle_files=True)
     ds = ds.map(lambda x: (x['image'], x['panoptic_image'], x['panoptic_objects']))
     dsz = tf.data.Dataset.zip((ds, ds.map(lambda img, pan_img, pan_obj: img).shuffle(1000))).prefetch(64)
-    result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.int32, tf.bool)), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
+    result = dsz.map(lambda source, target: tf.py_function(image_insert, [source[0], source[1], source[2]['label'], source[2]['id'], source[2]['bbox'], target], Tout=(tf.uint8, tf.int32, tf.bool)), deterministic=False)
     result = result.filter(lambda x, y, bool: bool)
     result = result.map(lambda x, y, bool: (x, y))
     result = result.map(lambda x,y: (tf.reshape(x, (256,256,3)), tf.reshape(y, (256,256,1))))
     return result
 
-
+i = 0
 for image, mask in get_dataset():
     tf.io.write_file("image.png", tf.io.encode_png(image))
     tf.io.write_file("mask.png", tf.io.encode_png(tf.cast(mask*255, tf.uint8)))
-    break
+    if i > 1000:
+        break
+    i = i+1
+print(time.time()-t)
