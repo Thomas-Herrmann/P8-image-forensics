@@ -9,8 +9,6 @@ import scipy
 from scipy.ndimage import gaussian_filter
 import time
 
-t = time.time()
-
 BANNED_LABELS = [81, 87, 90, 97, 99, 100, 101, 102, 103, 105, 109, 110, 111, 112, 113, 116, 118, 119, 122, 123, 124, 125, 126, 131, 132]
 DATASET_DIRECTORY = None
 REACH_AROUND_INSERT_BOX = 170
@@ -142,11 +140,6 @@ def get_dataset(split='train'):
     result = result.map(lambda x,y: (tf.reshape(x, (256,256,3)), tf.reshape(y, (256,256,1))))
     return result
 
-i = 0
 for image, mask in get_dataset():
     tf.io.write_file("image.png", tf.io.encode_png(image))
     tf.io.write_file("mask.png", tf.io.encode_png(tf.cast(mask*255, tf.uint8)))
-    if i > 1000:
-        break
-    i = i+1
-print(time.time()-t)
