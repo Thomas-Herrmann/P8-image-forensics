@@ -140,6 +140,6 @@ def get_dataset(split='train'):
     result = result.map(lambda x,y: (tf.reshape(x, (256,256,3)), tf.reshape(y, (256,256,1))))
     return result
 
-for image, mask in get_dataset():
-    tf.io.write_file("image.png", tf.io.encode_png(image))
-    tf.io.write_file("mask.png", tf.io.encode_png(tf.cast(mask*255, tf.uint8)))
+#for image, mask in get_dataset():
+#    tf.io.write_file("image.png", tf.io.encode_png(image))
+#    tf.io.write_file("mask.png", tf.io.encode_png(tf.cast(mask*255, tf.uint8)))
