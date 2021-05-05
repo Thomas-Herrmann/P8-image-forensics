@@ -12,7 +12,7 @@ batch_size = 128
 train_ds = get_combined_two_class_dataset(batch_size).repeat()
 train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE)
 
-#val_ds = val_ds.prefetch(buffer_size=batch_size)
+val_ds = get_two_class_valid_dataset(batch_size).prefetch(buffer_size=batch_size)
 
 #sizes =             [128,64, 32, 16,      8]
 down_stack_filters = [64,128,256,512,512+128]
@@ -60,7 +60,7 @@ else:
     model.compile(
         optimizer="adam",
         loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=["accuracy", metrics.f1],
+        metrics=["accuracy"],
     )
 model.summary()
 
@@ -71,6 +71,7 @@ callbacks = [
 
 model.fit(
     train_ds, epochs=epochs, callbacks=callbacks, steps_per_epoch=200000//batch_size,
-    #validation_data=val_ds, class_weight=class_weight, 
+    validation_data=val_ds, 
+    #class_weight=class_weight, 
     initial_epoch=load_from_epoch or 0,
 )
