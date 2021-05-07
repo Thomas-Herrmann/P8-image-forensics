@@ -1,6 +1,7 @@
 data
 models
 test
+out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
