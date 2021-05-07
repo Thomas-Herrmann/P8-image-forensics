@@ -3,7 +3,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 #import AAConv2D as AA
 import metrics
-from DataGenerator import get_combined_two_class_dataset
+from DataGenerator import get_combined_two_class_dataset, get_two_class_valid_dataset
 epochs = 100
 
 image_size = (256, 256)
