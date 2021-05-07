@@ -8,6 +8,7 @@ import os
 import coco_insert
 from manipulations import ManiFamily, generate_validation
 from qualitative_test import colored_mask
+import numpy as np
 
 class DataGenerator():
 
@@ -252,37 +253,10 @@ def get_weighted_two_class_dataset(batch_size, weights):
 
 
 def get_valid_dataset(batch_size):
+    path = os.path.abspath("validation")
     return tf.data.experimental.load(path, (tf.TensorSpec(shape=(256,256,3), dtype=tf.uint8), tf.TensorSpec(shape=(256,256,1), dtype=tf.int32))).batch(batch_size)
 
 def get_two_class_valid_dataset(batch_size):
+    path = os.path.abspath("validation")
     return tf.data.experimental.load(path, (tf.TensorSpec(shape=(256,256,3), dtype=tf.uint8), tf.TensorSpec(shape=(256,256,1), dtype=tf.int32))).map(lambda image, mask: (image, tf.cast(mask>0, tf.int32))).batch(batch_size)
 
-
-#for images, masks in get_combined_dataset(2):
-#    print(".")
-if __name__ == "__main__":
-    #generate_validation()
-    #get_label_map("train")
-    #get_label_map("validation")
-    #exit()
-
-    path = os.path.abspath("validation")
-    ds = get_two_class_valid_dataset(256)
-
-    for epoch in range(5, 105, 5):
-        model = tf.keras.models.load_model(f"2class_aaconv_save_at_{epoch}.tf")
-        print("Epoch", epoch)
-        model.evaluate(ds)
-    #tf.data.experimental.save(get_combined_dataset(128, split='validation').unbatch(), path)
-    '''
-    i = 0
-    for images, masks in get_combined_dataset(64):
-        for image, mask in zip(images, masks):
-            tf.io.write_file(f"samples/image{i}.png", tf.io.encode_png(image))
-            c_mask, legends = colored_mask(tf.cast(mask, tf.int64))
-            c_mask = tf.squeeze(c_mask)
-            tf.io.write_file(f"samples/mask{i}.png", tf.io.encode_png(c_mask))
-            tf.io.write_file(f"stitches/stitch{i}.png", tf.io.encode_png(tf.concat([image, c_mask], axis=1)))
-            i += 1
-        if i > 100: break
-    '''
