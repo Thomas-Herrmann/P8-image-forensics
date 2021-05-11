@@ -84,7 +84,7 @@ def get_CG_1050_dataset():
             name, _ = os.path.splitext(filename_ext)
 
             mask = _read_tf_image(CG_1050_GEN_MASK_PATH + name + ".png")
-            tampered = tf.image.decode_png(tf.io.read_file(tampered_path), channels=3)
+            tampered = tf.image.decode_image(tf.io.read_file(tampered_path), channels=3)
 
             yield (tampered, mask)
 
@@ -167,10 +167,8 @@ if __name__ == "__main__":
     #model  = tf.keras.models.load_model("models/2_class_pixel_conv_save_at_97_w_blur.tf", custom_objects={'f1':lambda x,y:1})
     model  = tf.keras.models.load_model("models/2class_aaconv_no_sblur_save_at_100.tf", custom_objects={'f1':lambda x,y:1})
     
-    
-
-    #dataset = get_CG_1050_dataset().take(10)
-    dataset = get_CASIA2_dataset()
+    dataset = get_CG_1050_dataset()
+    #dataset = get_CASIA2_dataset()
 
     run_tests(dataset, model, 1)
     
