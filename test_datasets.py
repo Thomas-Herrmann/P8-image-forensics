@@ -1,9 +1,9 @@
-import tensorflow_datasets as tfds
 import tensorflow as tf
-import tensorflow.data as tfd
 import tensorflow_io as tfio
 import glob
 import os.path
+import qualitative_test
+import tensorflow_addons as tfa
 
 # https://data.mendeley.com/datasets/dk84bmnyw9/2
 CG_1050_ORIG_PATH     = "test/CG-1050/ORIGINAL/"
@@ -125,13 +125,52 @@ def get_CASIA2_dataset():
     )
 
 
+def test_metric(model, dataset, metrics, patch_multiplier=1):
+    for i, (tampered, mask) in enumerate(dataset):
+        if i % 5 == 0:
+            print(i)
+
+        patches = qualitative_test.split_patches(tampered, 256, 256, patch_multiplier)
+        pred_patches = qualitative_test.predict_patches(model, patches)
+        combined = qualitative_test.combine_patches(pred_patches)
+
+        certainties = tf.expand_dims(tf.gather(tf.nn.softmax(combined), 1, axis=-1), axis=-1)
+
+        mask = tf.expand_dims(tf.gather(mask, 0, axis=-1), axis=-1)
+        mask = tf.cast(mask>0, tf.int32)
+
+        for metric in metrics:
+            metric.update_state(mask, certainties)
+
 
 if __name__ == "__main__":
+    physical_devices = tf.config.list_physical_devices('GPU') 
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
+    def run_tests(dataset, model, patch_multiplier=1):
+        acc = tf.keras.metrics.BinaryAccuracy(threshold=0.5)
+        auc = tf.keras.metrics.AUC(num_thresholds=10)
+        f1 = tfa.metrics.F1Score(num_classes=2, average="micro", threshold=0.5)
+        ce = tf.keras.metrics.BinaryCrossentropy(from_logits=False)
+
+        test_metric(model, dataset, [acc, auc, f1, ce], patch_multiplier)
+
+        print(f"Acc: {acc.result()}")
+        print(f"AUC: {auc.result()}")
+        print(f"F1:  {f1.result()}")
+        print(f"CrE: {ce.result()}")
+
     #generate_CG_1050_masks()
 
-    #dataset = get_CG_1050_dataset() 
+    #model  = tf.keras.models.load_model("models/2_class_pixel_conv_save_at_100.tf", custom_objects={'f1':lambda x,y:1})
+    #model  = tf.keras.models.load_model("models/2class_blr_aaconv_save_at_52.tf", custom_objects={'f1':lambda x,y:1})
+    #model  = tf.keras.models.load_model("models/2_class_pixel_conv_save_at_97_w_blur.tf", custom_objects={'f1':lambda x,y:1})
+    model  = tf.keras.models.load_model("models/2class_aaconv_no_sblur_save_at_100.tf", custom_objects={'f1':lambda x,y:1})
+    
+    
+
+    #dataset = get_CG_1050_dataset().take(10)
     dataset = get_CASIA2_dataset()
 
-    for i, (tampered, mask) in enumerate(dataset):
-        comb = tf.concat([tampered, mask], axis=1)
-        tf.io.write_file(f"out/img{i}.png", tf.io.encode_png(comb))
+    run_tests(dataset, model, 1)
+    
