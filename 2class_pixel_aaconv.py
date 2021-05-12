@@ -3,7 +3,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 import AAConv2D as AA
 import metrics
-from DataGenerator import get_combined_two_class_dataset, get_weighted_two_class_dataset
+from DataGenerator import get_combined_two_class_dataset, get_two_class_valid_dataset
 epochs = 100
 
 image_size = (256, 256)
@@ -11,16 +11,17 @@ batch_size = 128
 
 
 train_ds = get_combined_two_class_dataset(batch_size).repeat()
-#train_ds = get_weighted_two_class_dataset(batch_size, {0:0.1, 1:1.}).repeat()
 train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE)
 
+val_ds = get_two_class_valid_dataset(batch_size).prefetch(buffer_size=batch_size)
+
 #sizes =             [128,64, 32, 16,  8,  4]
-down_stack_filters = [64,128,256,512]
+down_stack_filters = [64,128,256,620]
 up_stack_filters   = reversed(down_stack_filters[:-1])
 KERNEL_SIZE = 3
 
 def make_model(input_shape, num_classes):
-    inputs = keras.Input(shape=input_shape)
+    inputs = keras.Input(shape=input_shape) 
     # Image augmentation block
     # Entry block
     x = layers.experimental.preprocessing.Rescaling(1.0 / 255)(inputs)
@@ -36,7 +37,7 @@ def make_model(input_shape, num_classes):
 
     skips = list(reversed(skips))
 
-    for size in [1024]:
+    for size in [1024]: #[664,664]
         x = AA.AAConv2D(size, KERNEL_SIZE, size//2, size//2, 4, True)(x)
         x = tf.keras.layers.BatchNormalization()(x)
         #x = tf.keras.layers.LeakyReLU()(x)
@@ -64,6 +65,11 @@ load_from_epoch = None
 
 if load_from_epoch is not None:
     model = keras.models.load_model(f"2class_aaconv_save_at_{load_from_epoch}.tf")
+    model.compile(
+        optimizer="adam",
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        metrics=["accuracy"],
+    )
 else:
     model = make_model(input_shape=image_size + (3,), num_classes=2)
     model.compile(
@@ -72,14 +78,14 @@ else:
         metrics=["accuracy"],
     )
 model.summary()
-#exit()
+
 callbacks = [
     keras.callbacks.ModelCheckpoint("2class_aaconv_save_at_{epoch}.tf")
 ]
 
 model.fit(
     train_ds, epochs=epochs, callbacks=callbacks, steps_per_epoch=200000//batch_size,
-    #validation_data=val_ds, 
+    validation_data=val_ds, 
     #class_weight=class_weight, 
     initial_epoch=load_from_epoch or 0,
 )
