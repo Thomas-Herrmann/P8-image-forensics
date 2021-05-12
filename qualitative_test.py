@@ -48,8 +48,15 @@ def split_patches(image, patch_width, patch_height, patch_multiplier = 1):
     num_patches_x = math.ceil(width / patch_width * patch_multiplier)
     num_patches_y = math.ceil(height / patch_height * patch_multiplier)
 
-    delta_x = (width - patch_width) / (num_patches_x - 1)
-    delta_y = (height - patch_height) / (num_patches_y - 1)
+    if num_patches_x - 1 == 0:
+        delta_x = 0
+    else:
+        delta_x = (width - patch_width) / (num_patches_x - 1)
+
+    if num_patches_y - 1 == 0:
+        delta_y = 0
+    else:
+        delta_y = (height - patch_height) / (num_patches_y - 1)
 
     patches = []
     for x in range(num_patches_x):
@@ -102,17 +109,21 @@ def patch_and_combine(model, image, patch_multiplier = 1):
     return out_mask
 
 
+image_paths = ["mik.png", "mik2.png", "mik3_v3.png", "mik3_spl1.png", "mik3_spl2.png", "fireworks.png", "20190814_224442.jpg", "F65gsSs.jpg", "6FjFj80.jpg", "P30Idhx.jpg", "drake_mod.jpg"]
+image_paths = ["Tp_D_CNN_M_B_nat00056_nat00099_11105.jpg"]
 
 if __name__ == "__main__":
     physical_devices = tf.config.list_physical_devices('GPU') 
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
-    model  = tf.keras.models.load_model("models/new_aaconv_save_at_10.tf", custom_objects={'f1':lambda x,y:1})
+    model  = tf.keras.models.load_model("models/2_class_pixel_conv_save_at_97_w_blur.tf", custom_objects={'f1':lambda x,y:1})
 
-    #image  = tf.image.decode_png(tf.io.read_file("data/unknown.png"), channels=3)
-    #out_mask = patch_and_combine(model, image, 5)
-    #height, width = out_mask.shape[:2]
-    #tf.io.write_file(f"out.png", tf.io.encode_png(tf.reshape(out_mask, [height, width, 3])))
+    #for i, path in enumerate(image_paths):
+    #    print(f"{i}: {path}")
+    #    image  = tf.image.decode_image(tf.io.read_file(f"data/{path}"), channels=3)
+    #    out_mask = patch_and_combine(model, image, 5)
+    #    height, width = out_mask.shape[:2]
+    #    tf.io.write_file(f"out/out{i}.png", tf.io.encode_png(tf.reshape(out_mask, [height, width, 3])))
 
     for i in range(10):
         image  = tf.image.decode_png(tf.io.read_file(f"samples/image{i}.png"), channels=3)

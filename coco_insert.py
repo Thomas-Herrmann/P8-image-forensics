@@ -116,7 +116,7 @@ def image_insert(source_image, pan_image, pan_label, pan_id, pan_bbox, target_im
     if np.average(final_mask)/256 < MAX_INSERT_COVER_RATE:
         return DUMMY
 
-    final_mask = gaussian_filter(final_mask, sigma=rand.uniform(0, 20), truncate=0.5)
+    final_mask = gaussian_filter(final_mask, sigma=rand.uniform(1, 20), truncate=0.5)
     vectorBlowup = np.vectorize(lambda x: min(x * 2, 255))
     final_mask = vectorBlowup(final_mask)
     final_crop = np.array(list([((ti*rm)+(ii*(255-rm)))/255 for (ti, ii, rm) in zip(final_target, final_insert, final_mask)])).reshape(final_target.shape)
