@@ -107,8 +107,8 @@ class DataGenerator():
 CROP_SHAPE=(256, 256)
 MANIP_DIR = "data/manipulated"
 MASK_DIR = "data/masks"
-TRAIN_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] #"/user/student.aau.dk/slund17/tensorflow_datasets/downloads/extracted/ZIP.images.cocodataset.org_zips_train2017aai7WOpfj5nSSHXyFBbeLp3tMXjpA_H3YD4oO54G2Sk.zip/train2017"
-VAL_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017")[0]
+#TRAIN_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] #"/user/student.aau.dk/slund17/tensorflow_datasets/downloads/extracted/ZIP.images.cocodataset.org_zips_train2017aai7WOpfj5nSSHXyFBbeLp3tMXjpA_H3YD4oO54G2Sk.zip/train2017"
+#VAL_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017")[0]
 @tf.function
 def transform_mask(mask):
     with tf.device("/gpu:0"):
@@ -233,6 +233,13 @@ def get_combined_dataset(batch_size, split='train'):
     dataset = dataset.batch(batch_size, drop_remainder=True)
     return dataset
 
+def get_combined_classification_dataset(batch_size, split='train'):
+    #return get_classification_valid_dataset(batch_size)
+    ds = get_combined_dataset(batch_size, split).unbatch()
+    ds = ds.map(lambda image, mask: (image, tf.math.reduce_max(mask)))
+    return ds.batch(batch_size, drop_remainder=True)
+
+
 def get_combined_two_class_dataset(batch_size):
     coco = coco_insert.get_dataset()
     manip = get_two_class_dataset(batch_size//2)
@@ -260,3 +267,162 @@ def get_two_class_valid_dataset(batch_size):
     path = os.path.abspath("validation")
     return tf.data.experimental.load(path, (tf.TensorSpec(shape=(256,256,3), dtype=tf.uint8), tf.TensorSpec(shape=(256,256,1), dtype=tf.int32))).map(lambda image, mask: (image, tf.cast(mask>0, tf.int32))).batch(batch_size)
 
+def get_classification_valid_dataset(batch_size):
+    ds = get_valid_dataset(batch_size).unbatch()
+    ds = ds.map(lambda image, mask: (image, tf.math.reduce_max(mask)))
+    return ds.batch(batch_size)
+
+def print_per_class_accuracy(checkpoint_name):
+    ds = get_valid_dataset(16)
+    model =  tf.keras.models.load_model(checkpoint_name, custom_objects={'f1':lambda x,y:0})
+
+    sums = [0 for _ in range(1,9)]
+    counts = [0 for _ in range(1,9)]
+
+
+    for images, masks in ds:
+        class_labels = tf.reduce_max(masks, axis=[1,2,3]) - 1
+        predictions = model(images)
+        maxes = tf.expand_dims(tf.math.argmax(predictions, axis=-1), axis=-1)
+        correct_ratio = tf.reduce_mean(tf.cast(tf.equal(maxes, tf.cast(masks>0, tf.int64)), tf.float32), axis=[1,2,3])
+        print(".")
+
+        for label, ratio in zip(class_labels.numpy(), correct_ratio.numpy()):
+            #print(label.shape)
+            label = int(label)
+            sums[label] += ratio
+            counts[label] += 1
+
+    for i in range(0,8):
+        print(i+1, ":" ,sums[i]/counts[i], counts[i])
+
+    for i in range(0,8):
+        print(f"{(sums[i]/counts[i])*100:.1f}\\% &")
+
+
+def print_AUC(checkpoint_name):
+    ds = get_valid_dataset(16)
+    model =  tf.keras.models.load_model(checkpoint_name, custom_objects={'f1':lambda x,y:0})
+
+    preds = None
+    msks = None
+
+
+    for images, masks in ds:
+        class_labels = tf.reduce_max(masks, axis=[1,2,3]) - 1
+        predictions = model(images)
+        soft = tf.math.softmax(predictions, axis=-1)
+        print(".")
+
+        if preds is None:
+            preds = soft.numpy()
+            msks = masks.numpy()
+        else:
+            preds = np.append(preds, soft.numpy())
+            msks = np.append(msks, masks.numpy())
+    
+    print(preds.shape)
+    print(msks.shape)
+
+
+#for images, masks in get_combined_dataset(2):
+#    print(".")
+if __name__ == "__main__":
+    #path = os.path.abspath("validation")
+    #ds = tf.data.experimental.load(path, (tf.TensorSpec(shape=(256,256,3), dtype=tf.uint8), tf.TensorSpec(shape=(256,256,1), dtype=tf.int32)))
+    #print("Size:", tf.data.experimental.cardinality(ds))
+
+    #exit()
+    #generate_validation()
+    #get_label_map("train")
+    #get_label_map("validation")
+    #exit()
+
+    #path = os.path.abspath("validation")
+    #print_per_class_accuracy(f"2class_aaconv_save_at_50.tf")
+
+    '''
+    blur-aaconv 34?
+    1 : 0.876302519044676 572
+    2 : 0.9055868101514075 605
+    3 : 0.8956534333551045 622
+    4 : 0.8853831741045106 583
+    5 : 0.8933324098587037 640
+    6 : 0.9612658530522807 607
+    7 : 0.9332432063545768 635
+    8 : 0.9517637330886216 1368
+
+    blur-aaconv 52
+    1 : 0.6973854811875136 572
+    2 : 0.7401185343088197 605
+    3 : 0.7094084319577723 622
+    4 : 0.6945137298741022 583
+    5 : 0.7201680183410645 640
+    6 : 0.872519001340159 607
+    7 : 0.8195684958630659 635
+    8 : 0.7332804495828193 1368
+
+    conv 100
+    1 : 0.8711867966018356 572
+    2 : 0.9335639386137655 605
+    3 : 0.9189037801368444 622
+    4 : 0.9082501838383094 583
+    5 : 0.9238036870956421 640
+    6 : 0.9699303817120573 607
+    7 : 0.9499320683516855 635
+    8 : 0.9590611262628209 1368
+
+    aaconv 100
+    1 : 0.8656661827247459 572
+    2 : 0.9281326672262397 605
+    3 : 0.9108121571433506 622
+    4 : 0.900443520390558 583
+    5 : 0.916702127456665 640
+    6 : 0.9650859298580364 607
+    7 : 0.9434049351008859 635
+    8 : 0.9560217383312203 1368
+    '''
+    @tf.function
+    def to_pixels(x):
+        outputs = tf.keras.layers.Reshape([256//8, 256//8, 8, 8, 2])(x)
+        outputs = tf.concat([tf.gather(outputs, [i], axis=2) for i in range(256//8)], axis=4)
+        outputs = tf.concat([tf.gather(outputs, [i], axis=1) for i in range(256//8)], axis=3)
+        return tf.keras.layers.Reshape((256, 256, 2))(outputs)
+    
+    ds = get_valid_dataset(1)
+
+    model = tf.keras.models.load_model(f"pixel_patch_save_at_23.tf", custom_objects={'to_pixels':to_pixels})
+
+    names = ['SPLICE'] + [x.value for x in ManiFamily]
+
+    for i, (image, mask) in enumerate(ds):
+        out = model(image)
+        out = tf.nn.softmax(out, axis=-1)
+        out = tf.gather(out, 1, axis=-1)
+        out = tf.cast(out*255, tf.uint8)
+        label = tf.reduce_max(mask)
+        name = names[label-1]
+        
+
+        tf.io.write_file(f"val/{i}image-{name}.png", tf.io.encode_png(tf.squeeze(image, axis=0)))
+        tf.io.write_file(f"val/{i}out-{name}.png", tf.io.encode_png(tf.squeeze(tf.expand_dims(out, -1), axis=0)))
+        tf.io.write_file(f"val/{i}mask-{name}.png", tf.io.encode_png(tf.squeeze(255*tf.cast(mask>0, tf.uint8), axis=0)))
+    
+
+    #for epoch in range(5, 105, 5):
+    #    model = tf.keras.models.load_model(f"2class_aaconv_save_at_{epoch}.tf")
+    #    print("Epoch", epoch)
+    #    model.evaluate(ds)
+    #tf.data.experimental.save(get_combined_dataset(128, split='validation').unbatch(), path)
+    '''
+    i = 0
+    for images, masks in get_combined_dataset(64):
+        for image, mask in zip(images, masks):
+            tf.io.write_file(f"samples/image{i}.png", tf.io.encode_png(image))
+            c_mask, legends = colored_mask(tf.cast(mask, tf.int64))
+            c_mask = tf.squeeze(c_mask)
+            tf.io.write_file(f"samples/mask{i}.png", tf.io.encode_png(c_mask))
+            tf.io.write_file(f"stitches/stitch{i}.png", tf.io.encode_png(tf.concat([image, c_mask], axis=1)))
+            i += 1
+        if i > 100: break
+    '''
