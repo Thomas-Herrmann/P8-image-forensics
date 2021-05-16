@@ -107,8 +107,9 @@ class DataGenerator():
 CROP_SHAPE=(256, 256)
 MANIP_DIR = "data/manipulated"
 MASK_DIR = "data/masks"
-#TRAIN_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] #"/user/student.aau.dk/slund17/tensorflow_datasets/downloads/extracted/ZIP.images.cocodataset.org_zips_train2017aai7WOpfj5nSSHXyFBbeLp3tMXjpA_H3YD4oO54G2Sk.zip/train2017"
-#VAL_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017")[0]
+TRAIN_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] #"/user/student.aau.dk/slund17/tensorflow_datasets/downloads/extracted/ZIP.images.cocodataset.org_zips_train2017aai7WOpfj5nSSHXyFBbeLp3tMXjpA_H3YD4oO54G2Sk.zip/train2017"
+VAL_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017")[0]
+
 @tf.function
 def transform_mask(mask):
     with tf.device("/gpu:0"):
@@ -391,7 +392,7 @@ if __name__ == "__main__":
     
     ds = get_valid_dataset(1)
 
-    model = tf.keras.models.load_model(f"pixel_patch_save_at_23.tf", custom_objects={'to_pixels':to_pixels})
+    model = tf.keras.models.load_model(f"pixel_patch_save_at_42.tf", custom_objects={'to_pixels':to_pixels})
 
     names = ['SPLICE'] + [x.value for x in ManiFamily]
 
