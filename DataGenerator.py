@@ -108,8 +108,11 @@ class DataGenerator():
 CROP_SHAPE=(256, 256)
 MANIP_DIR = "data/manipulated"
 MASK_DIR = "data/masks"
-#TRAIN_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] 
-#VAL_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017")[0]
+try:
+    TRAIN_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] 
+    VAL_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017")[0]
+except:
+    pass
 
 @tf.function
 def transform_mask(mask):
