@@ -285,15 +285,19 @@ def print_per_class_metric_for_checkpoint(checkpoint_name, metric):
         class_labels = tf.reduce_max(masks, axis=[1,2,3]) 
         predictions = model(images)
         probs = tf.gather(tf.nn.softmax(predictions), 1, axis=-1)
+        #probs = tf.where(class_labels == 0, 1-probs, probs)
         #maxes = tf.expand_dims(tf.math.argmax(predictions, axis=-1), axis=-1)
         #correct_ratio = tf.reduce_mean(tf.cast(tf.equal(maxes, tf.cast(masks>0, tf.int64)), tf.float32), axis=[1,2,3])
         #print(".")
 
         for label, pred, mask in zip(class_labels, probs, masks):
-            scores[label].update_state(tf.cast(mask>0, tf.int32), pred)
+            if label == 0:
+                scores[label].update_state(tf.cast(mask>0, tf.int32), 1-pred)
+            else:
+                scores[label].update_state(tf.cast(mask>0, tf.int32), pred)
 
     for i, score in enumerate(scores):
-        print(i, ":", score.result())
+        print(i, ":", score.result().numpy())
 
 def print_per_class_F1_for_checkpoint(checkpoint_name):
     print_per_class_metric_for_checkpoint(checkpoint_name, lambda: tfa.metrics.F1Score(num_classes=2, average='micro',threshold=0.5))
