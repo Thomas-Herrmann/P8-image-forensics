@@ -24,6 +24,8 @@ CASIA2_GEN_MASK_PATH = "test/CASIA2.0_GEN_MASK/" # Unused
 COVERAGE_TAMP_PATH = "test/COVERAGE/image/"
 COVERAGE_MASK_PATH = "test/COVERAGE/mask/"
 
+FAU_PATH = "test/benchmark_data/"
+
 RESULT_CACHE_PATH    = "test/results_saved/"
 
 def _read_tf_image(path):
@@ -185,6 +187,54 @@ def get_validation_dataset():
             tf.TensorSpec(shape=(), dtype=tf.string))
     )
 
+def get_FAU_image_manipulation_dataset():
+    tampered_paths = glob.glob(FAU_PATH + "*/*_copy.png")
+
+    def mask_paths(tampered_path):
+        return glob.glob(tampered_path[:-9] + "_?_alpha.png")
+
+    tampered_masks_paths = [(tamp, mask_paths(tamp)) for tamp in tampered_paths]
+
+    def get_generator():
+        for tampered_path, mask_paths in tampered_masks_paths:
+            filename_ext = os.path.basename(tampered_path)
+            name, _ = os.path.splitext(filename_ext)
+
+            tampered = _read_tf_image(tampered_path)
+            masks = tf.data.Dataset.from_tensor_slices([_read_tf_image(p) for p in mask_paths])
+            mask = masks.reduce(iter(masks).next(), tf.bitwise.bitwise_or)
+
+            yield (tampered, mask, name, "fau_image_manipulation")
+
+    return tf.data.Dataset.from_generator(
+        get_generator,
+        output_signature=(
+            tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8),
+            tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8),
+            tf.TensorSpec(shape=(), dtype=tf.string),
+            tf.TensorSpec(shape=(), dtype=tf.string))
+    )
+
+
+def calculate_certainties(model, tampered, patch_multiplier, model_name, tampered_name, dataset_name):
+    cache_dir = f"{RESULT_CACHE_PATH}/{dataset_name}/pmul{patch_multiplier}/{model_name}/"
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+
+    cache_path = f"{cache_dir}{tampered_name}.npy"
+    # Try to load from cache
+    if os.path.exists(cache_path):
+        certainties = np.load(cache_path)
+    else:
+        patches = qualitative_test.split_patches(tampered, 256, 256, patch_multiplier)
+        pred_patches = qualitative_test.predict_patches(model, patches)
+        combined = qualitative_test.combine_patches(pred_patches)
+
+        certainties = tf.expand_dims(tf.gather(tf.nn.softmax(combined), 1, axis=-1), axis=-1)
+        certainties = tf.cast(certainties, tf.float16)
+        np.save(cache_path, certainties)
+    
+    return certainties
 
 def test_metric(model, dataset, metrics, model_name, patch_multiplier=1):
     counter = 0
@@ -192,22 +242,7 @@ def test_metric(model, dataset, metrics, model_name, patch_multiplier=1):
         if i % 5 == 0:
             print(i)
 
-        cache_dir = f"{RESULT_CACHE_PATH}/{dataset_name}/pmul{patch_multiplier}/{model_name}/"
-        if not os.path.exists(cache_dir):
-            os.makedirs(cache_dir)
-
-        cache_path = f"{cache_dir}{img_name}.npy"
-        # Try to load from cache
-        if os.path.exists(cache_path):
-            certainties = np.load(cache_path)
-        else:
-            patches = qualitative_test.split_patches(tampered, 256, 256, patch_multiplier)
-            pred_patches = qualitative_test.predict_patches(model, patches)
-            combined = qualitative_test.combine_patches(pred_patches)
-
-            certainties = tf.expand_dims(tf.gather(tf.nn.softmax(combined), 1, axis=-1), axis=-1)
-            certainties = tf.cast(certainties, tf.float16)
-            np.save(cache_path, certainties)
+        certainties = calculate_certainties(model, tampered, patch_multiplier, model_name, img_name, dataset_name)
 
         mask = tf.expand_dims(tf.gather(mask, 0, axis=-1), axis=-1)
         mask = tf.cast(mask>0, tf.int32)
@@ -237,23 +272,23 @@ if __name__ == "__main__":
 
     #generate_CG_1050_masks()
 
-    #model_name = "2_class_pixel_conv_save_at_100.tf"
-    #model_name = "2class_blr_aaconv_save_at_52.tf"
-    #model_name = "2_class_pixel_conv_save_at_97_w_blur.tf"
-    #model_name = "2class_aaconv_no_sblur_save_at_100.tf"
-
-    model_name = "2class_aaconv_save_at_93_final.tf"
-    #model_name = "2_class_pixel_conv_save_at_89_final.tf"
+    #model_name = "2class_aaconv_save_at_93_final.tf"
+    model_name = "2_class_pixel_conv_save_at_89_final.tf"
 
     model  = tf.keras.models.load_model("models/" + model_name, custom_objects={'f1':lambda x,y:1})
     
     #dataset = get_CG_1050_dataset()
     #dataset = get_CASIA2_dataset()
-    dataset = get_COVERAGE_dataset()
+    #dataset = get_CASIA2_dataset(pattern="Tp_D_???_?_?_*")
+    #dataset = get_CASIA2_dataset(pattern="Tp_S_???_?_?_*")
+    #dataset = get_COVERAGE_dataset()
     #dataset = get_validation_dataset()
+    dataset = get_FAU_image_manipulation_dataset()
 
-    #for tampered, mask, name in dataset:
-    #    print(name)
+    #for i, (tampered, mask, name, dataset_name) in enumerate(dataset):
+        #print(f"out{i}")
+        #tf.io.write_file(f"out/out{i}.png", tf.io.encode_png(tf.concat([tampered, mask], axis=1)))
+        #tf.io.write_file(f"test_out{i}.png", tf.io.encode_png(tf.concat([image, mask, tf.reshape(c_mask, [256, 256, 3])]))) 
 
     results, _ = run_tests(dataset, model, model_name, 2)
 
