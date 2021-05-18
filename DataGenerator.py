@@ -1,3 +1,4 @@
+from numpy.lib.function_base import average
 import tensorflow_datasets as tfds
 import tensorflow_addons as tfa
 import tensorflow as tf
@@ -107,8 +108,8 @@ class DataGenerator():
 CROP_SHAPE=(256, 256)
 MANIP_DIR = "data/manipulated"
 MASK_DIR = "data/masks"
-TRAIN_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] #"/user/student.aau.dk/slund17/tensorflow_datasets/downloads/extracted/ZIP.images.cocodataset.org_zips_train2017aai7WOpfj5nSSHXyFBbeLp3tMXjpA_H3YD4oO54G2Sk.zip/train2017"
-VAL_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017")[0]
+#TRAIN_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/train2017")[0] 
+#VAL_DIR = glob(os.path.expanduser('~')+"/tensorflow_datasets/downloads/extracted/*/val2017")[0]
 
 @tf.function
 def transform_mask(mask):
@@ -273,16 +274,49 @@ def get_classification_valid_dataset(batch_size):
     ds = ds.map(lambda image, mask: (image, tf.math.reduce_max(mask)))
     return ds.batch(batch_size)
 
+
+def print_per_class_metric_for_checkpoint(checkpoint_name, metric):
+    ds = get_valid_dataset(16)
+    model =  tf.keras.models.load_model(checkpoint_name, custom_objects={'f1':lambda x,y:0})
+
+    scores = [metric() for _ in range(9)]
+
+    for images, masks in ds:
+        class_labels = tf.reduce_max(masks, axis=[1,2,3]) 
+        predictions = model(images)
+        probs = tf.gather(tf.nn.softmax(predictions), 1, axis=-1)
+        #maxes = tf.expand_dims(tf.math.argmax(predictions, axis=-1), axis=-1)
+        #correct_ratio = tf.reduce_mean(tf.cast(tf.equal(maxes, tf.cast(masks>0, tf.int64)), tf.float32), axis=[1,2,3])
+        #print(".")
+
+        for label, pred, mask in zip(class_labels, probs, masks):
+            scores[label].update_state(tf.cast(mask>0, tf.int32), pred)
+
+    for i, score in enumerate(scores):
+        print(i, ":", score.result())
+
+def print_per_class_F1_for_checkpoint(checkpoint_name):
+    print_per_class_metric_for_checkpoint(checkpoint_name, lambda: tfa.metrics.F1Score(num_classes=2, average='micro',threshold=0.5))
+
+def print_per_class_AUC_for_checkpoint(checkpoint_name):
+    print_per_class_metric_for_checkpoint(checkpoint_name, lambda: tf.metrics.AUC(num_thresholds=10))
+
+def print_per_class_acc_for_checkpoint(checkpoint_name):
+    print_per_class_metric_for_checkpoint(checkpoint_name, lambda: tf.metrics.BinaryAccuracy(threshold=0.5))
+
+def print_per_class_loss_for_checkpoint(checkpoint_name):
+    print_per_class_metric_for_checkpoint(checkpoint_name, lambda: tf.metrics.BinaryCrossentropy(from_logits=False))
+
 def print_per_class_accuracy(checkpoint_name):
     ds = get_valid_dataset(16)
     model =  tf.keras.models.load_model(checkpoint_name, custom_objects={'f1':lambda x,y:0})
 
-    sums = [0 for _ in range(1,9)]
-    counts = [0 for _ in range(1,9)]
+    sums = [0 for _ in range(0,9)]
+    counts = [0 for _ in range(0,9)]
 
 
     for images, masks in ds:
-        class_labels = tf.reduce_max(masks, axis=[1,2,3]) - 1
+        class_labels = tf.reduce_max(masks, axis=[1,2,3]) 
         predictions = model(images)
         maxes = tf.expand_dims(tf.math.argmax(predictions, axis=-1), axis=-1)
         correct_ratio = tf.reduce_mean(tf.cast(tf.equal(maxes, tf.cast(masks>0, tf.int64)), tf.float32), axis=[1,2,3])
@@ -294,10 +328,10 @@ def print_per_class_accuracy(checkpoint_name):
             sums[label] += ratio
             counts[label] += 1
 
-    for i in range(0,8):
+    for i in range(0,9):
         print(i+1, ":" ,sums[i]/counts[i], counts[i])
 
-    for i in range(0,8):
+    for i in range(0,9):
         print(f"{(sums[i]/counts[i])*100:.1f}\\% &")
 
 
@@ -329,6 +363,16 @@ def print_AUC(checkpoint_name):
 #for images, masks in get_combined_dataset(2):
 #    print(".")
 if __name__ == "__main__":
+    model_name = f"2class_aaconv_save_at_50.tf"
+    print("F1s:")
+    print_per_class_F1_for_checkpoint(model_name)
+    print("AUCs:")
+    print_per_class_AUC_for_checkpoint(model_name)
+    print("Accs:")
+    print_per_class_acc_for_checkpoint(model_name)
+    print("Losses:")
+    print_per_class_loss_for_checkpoint(model_name)
+    exit()
     #path = os.path.abspath("validation")
     #ds = tf.data.experimental.load(path, (tf.TensorSpec(shape=(256,256,3), dtype=tf.uint8), tf.TensorSpec(shape=(256,256,1), dtype=tf.int32)))
     #print("Size:", tf.data.experimental.cardinality(ds))
@@ -392,7 +436,7 @@ if __name__ == "__main__":
     
     ds = get_valid_dataset(1)
 
-    model = tf.keras.models.load_model(f"pixel_patch_save_at_42.tf", custom_objects={'to_pixels':to_pixels})
+    model = tf.keras.models.load_model(f"pixel_patch_save_at_63.tf", custom_objects={'to_pixels':to_pixels})
 
     names = ['SPLICE'] + [x.value for x in ManiFamily]
 
