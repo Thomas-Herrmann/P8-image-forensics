@@ -1,9 +1,12 @@
 import tensorflow as tf
 import tensorflow_io as tfio
 import glob
+import os
 import os.path
 import qualitative_test
 import tensorflow_addons as tfa
+import numpy as np
+from DataGenerator import get_two_class_valid_dataset
 
 # https://data.mendeley.com/datasets/dk84bmnyw9/2
 CG_1050_ORIG_PATH     = "test/CG-1050/ORIGINAL/"
@@ -16,6 +19,12 @@ CASIA2_GT_PATH       = "test/CASIA2.0_Groundtruth/"
 CASIA2_TP_PATH       = "test/CASIA2.0_revised/Tp/"
 CASIA2_AU_PATH       = "test/CASIA2.0_revised/Au/"
 CASIA2_GEN_MASK_PATH = "test/CASIA2.0_GEN_MASK/" # Unused
+
+# https://github.com/wenbihan/coverage
+COVERAGE_TAMP_PATH = "test/COVERAGE/image/"
+COVERAGE_MASK_PATH = "test/COVERAGE/mask/"
+
+RESULT_CACHE_PATH    = "test/results_saved/"
 
 def _read_tf_image(path):
     imagefile = tf.io.read_file(path)
@@ -86,19 +95,21 @@ def get_CG_1050_dataset():
             mask = _read_tf_image(CG_1050_GEN_MASK_PATH + name + ".png")
             tampered = tf.image.decode_image(tf.io.read_file(tampered_path), channels=3)
 
-            yield (tampered, mask)
+            yield (tampered, mask, name, "cg_1050")
 
     return tf.data.Dataset.from_generator(
         get_generator,
         output_signature=(
             tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8),
-            tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8))
+            tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8),
+            tf.TensorSpec(shape=(), dtype=tf.string),
+            tf.TensorSpec(shape=(), dtype=tf.string))
     )
 
 
- # Uses stock masks
-def get_CASIA2_dataset():
-    tampered_dataset = glob.glob(CASIA2_TP_PATH + "Tp_*")
+# Uses stock masks
+def get_CASIA2_dataset(pattern="Tp_?_???_?_?_*"):
+    tampered_dataset = glob.glob(CASIA2_TP_PATH + pattern)
 
     def get_generator():
         for tampered_path in tampered_dataset:
@@ -115,60 +126,138 @@ def get_CASIA2_dataset():
                 print(f"{tampered_path}: Tampered and mask dimensions mismatch ({tampered.shape[:2]} and {mask.shape[:2]})")
                 continue
 
-            yield (tampered, mask)
+            yield (tampered, mask, name, "casia2")
 
     return tf.data.Dataset.from_generator(
         get_generator,
         output_signature=(
             tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8),
-            tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8))
+            tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8),
+            tf.TensorSpec(shape=(), dtype=tf.string),
+            tf.TensorSpec(shape=(), dtype=tf.string))
+    )
+
+def get_COVERAGE_dataset():
+    tampered_dataset = glob.glob(COVERAGE_TAMP_PATH + "*t.tif")
+
+    def get_generator():
+        for tampered_path in tampered_dataset:
+            filename_ext = os.path.basename(tampered_path)
+            name, _ = os.path.splitext(filename_ext)
+
+            tampered = _read_tf_image(tampered_path)
+            mask = _read_tf_image(COVERAGE_MASK_PATH + name[:-1] + "forged.tif")
+
+            if tampered.shape[0] < 256 or tampered.shape[1] < 256:
+                continue
+
+            if tampered.shape != mask.shape:
+                print(f"{tampered_path}: Tampered and mask dimensions mismatch ({tampered.shape[:2]} and {mask.shape[:2]})")
+                continue
+
+            yield (tampered, mask, name, "coverage")
+
+    return tf.data.Dataset.from_generator(
+        get_generator,
+        output_signature=(
+            tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8),
+            tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8),
+            tf.TensorSpec(shape=(), dtype=tf.string),
+            tf.TensorSpec(shape=(), dtype=tf.string))
+    )
+
+def get_validation_dataset():
+    dataset = get_two_class_valid_dataset(batch_size=1).unbatch()
+
+    def get_generator():
+        counter = -1
+        for tampered, mask in dataset:
+            counter += 1
+            mask = tf.repeat(mask, 3, axis=-1)
+            yield (tampered, mask, f"img{counter}", "validation")
+    
+    return tf.data.Dataset.from_generator(
+        get_generator,
+        output_signature=(
+            tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8),
+            tf.TensorSpec(shape=(None,None,3), dtype=tf.uint8),
+            tf.TensorSpec(shape=(), dtype=tf.string),
+            tf.TensorSpec(shape=(), dtype=tf.string))
     )
 
 
-def test_metric(model, dataset, metrics, patch_multiplier=1):
-    for i, (tampered, mask) in enumerate(dataset):
+def test_metric(model, dataset, metrics, model_name, patch_multiplier=1):
+    counter = 0
+    for i, (tampered, mask, img_name, dataset_name) in enumerate(dataset):
         if i % 5 == 0:
             print(i)
 
-        patches = qualitative_test.split_patches(tampered, 256, 256, patch_multiplier)
-        pred_patches = qualitative_test.predict_patches(model, patches)
-        combined = qualitative_test.combine_patches(pred_patches)
+        cache_dir = f"{RESULT_CACHE_PATH}/{dataset_name}/pmul{patch_multiplier}/{model_name}/"
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
 
-        certainties = tf.expand_dims(tf.gather(tf.nn.softmax(combined), 1, axis=-1), axis=-1)
+        cache_path = f"{cache_dir}{img_name}.npy"
+        # Try to load from cache
+        if os.path.exists(cache_path):
+            certainties = np.load(cache_path)
+        else:
+            patches = qualitative_test.split_patches(tampered, 256, 256, patch_multiplier)
+            pred_patches = qualitative_test.predict_patches(model, patches)
+            combined = qualitative_test.combine_patches(pred_patches)
+
+            certainties = tf.expand_dims(tf.gather(tf.nn.softmax(combined), 1, axis=-1), axis=-1)
+            certainties = tf.cast(certainties, tf.float16)
+            np.save(cache_path, certainties)
 
         mask = tf.expand_dims(tf.gather(mask, 0, axis=-1), axis=-1)
         mask = tf.cast(mask>0, tf.int32)
 
         for metric in metrics:
             metric.update_state(mask, certainties)
+        
+        counter += 1
+
+    return counter
 
 
 if __name__ == "__main__":
     physical_devices = tf.config.list_physical_devices('GPU') 
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
-    def run_tests(dataset, model, patch_multiplier=1):
-        acc = tf.keras.metrics.BinaryAccuracy(threshold=0.5)
+    def run_tests(dataset, model, model_name, patch_multiplier=1):
+        threshold = 0.5
+        acc = tf.keras.metrics.BinaryAccuracy(threshold=threshold)
         auc = tf.keras.metrics.AUC(num_thresholds=10)
-        f1 = tfa.metrics.F1Score(num_classes=2, average="micro", threshold=0.5)
+        f1 = tfa.metrics.F1Score(num_classes=2, average="micro", threshold=threshold)
         ce = tf.keras.metrics.BinaryCrossentropy(from_logits=False)
 
-        test_metric(model, dataset, [acc, auc, f1, ce], patch_multiplier)
+        num = test_metric(model, dataset, [acc, auc, f1, ce], model_name, patch_multiplier)
 
-        print(f"Acc: {acc.result()}")
-        print(f"AUC: {auc.result()}")
-        print(f"F1:  {f1.result()}")
-        print(f"CrE: {ce.result()}")
+        return ({"acc": acc.result().numpy(), "auc": auc.result().numpy(), "f1": f1.result().numpy(), "cre": ce.result().numpy()}, num)
 
     #generate_CG_1050_masks()
 
-    #model  = tf.keras.models.load_model("models/2_class_pixel_conv_save_at_100.tf", custom_objects={'f1':lambda x,y:1})
-    #model  = tf.keras.models.load_model("models/2class_blr_aaconv_save_at_52.tf", custom_objects={'f1':lambda x,y:1})
-    #model  = tf.keras.models.load_model("models/2_class_pixel_conv_save_at_97_w_blur.tf", custom_objects={'f1':lambda x,y:1})
-    model  = tf.keras.models.load_model("models/2class_aaconv_no_sblur_save_at_100.tf", custom_objects={'f1':lambda x,y:1})
-    
-    dataset = get_CG_1050_dataset()
-    #dataset = get_CASIA2_dataset()
+    #model_name = "2_class_pixel_conv_save_at_100.tf"
+    #model_name = "2class_blr_aaconv_save_at_52.tf"
+    #model_name = "2_class_pixel_conv_save_at_97_w_blur.tf"
+    #model_name = "2class_aaconv_no_sblur_save_at_100.tf"
 
-    run_tests(dataset, model, 1)
+    model_name = "2class_aaconv_save_at_93_final.tf"
+    #model_name = "2_class_pixel_conv_save_at_89_final.tf"
+
+    model  = tf.keras.models.load_model("models/" + model_name, custom_objects={'f1':lambda x,y:1})
     
+    #dataset = get_CG_1050_dataset()
+    #dataset = get_CASIA2_dataset()
+    dataset = get_COVERAGE_dataset()
+    #dataset = get_validation_dataset()
+
+    #for tampered, mask, name in dataset:
+    #    print(name)
+
+    results, _ = run_tests(dataset, model, model_name, 2)
+
+    print(f"Acc: {results['acc']}")
+    print(f"AUC: {results['auc']}")
+    print(f"F1 : {results['f1']}")
+    print(f"CrE: {results['cre']}")
