@@ -3,7 +3,7 @@ import tensorflow_io as tfio
 import glob
 import os
 import os.path
-import qualitative_test
+from qualitative_test import split_patches, predict_patches, combine_patches
 import tensorflow_addons as tfa
 import numpy as np
 from DataGenerator import get_two_class_valid_dataset
@@ -226,9 +226,9 @@ def calculate_certainties(model, tampered, patch_multiplier, model_name, tampere
     if os.path.exists(cache_path):
         certainties = np.load(cache_path)
     else:
-        patches = qualitative_test.split_patches(tampered, 256, 256, patch_multiplier)
-        pred_patches = qualitative_test.predict_patches(model, patches)
-        combined = qualitative_test.combine_patches(pred_patches)
+        patches = split_patches(tampered, 256, 256, patch_multiplier)
+        pred_patches = predict_patches(model, patches)
+        combined = combine_patches(pred_patches)
 
         certainties = tf.expand_dims(tf.gather(tf.nn.softmax(combined), 1, axis=-1), axis=-1)
         certainties = tf.cast(certainties, tf.float16)
@@ -272,8 +272,8 @@ if __name__ == "__main__":
 
     #generate_CG_1050_masks()
 
-    #model_name = "2class_aaconv_save_at_93_final.tf"
-    model_name = "2_class_pixel_conv_save_at_89_final.tf"
+    model_name = "2class_aaconv_save_at_93_final.tf"
+    #model_name = "2_class_pixel_conv_save_at_89_final.tf"
 
     model  = tf.keras.models.load_model("models/" + model_name, custom_objects={'f1':lambda x,y:1})
     
@@ -281,16 +281,16 @@ if __name__ == "__main__":
     #dataset = get_CASIA2_dataset()
     #dataset = get_CASIA2_dataset(pattern="Tp_D_???_?_?_*")
     #dataset = get_CASIA2_dataset(pattern="Tp_S_???_?_?_*")
-    #dataset = get_COVERAGE_dataset()
+    dataset = get_COVERAGE_dataset()
     #dataset = get_validation_dataset()
-    dataset = get_FAU_image_manipulation_dataset()
+    #dataset = get_FAU_image_manipulation_dataset()
 
     #for i, (tampered, mask, name, dataset_name) in enumerate(dataset):
         #print(f"out{i}")
         #tf.io.write_file(f"out/out{i}.png", tf.io.encode_png(tf.concat([tampered, mask], axis=1)))
         #tf.io.write_file(f"test_out{i}.png", tf.io.encode_png(tf.concat([image, mask, tf.reshape(c_mask, [256, 256, 3])]))) 
 
-    results, _ = run_tests(dataset, model, model_name, 2)
+    results, _ = run_tests(dataset, model, model_name, 5)
 
     print(f"Acc: {results['acc']}")
     print(f"AUC: {results['auc']}")
