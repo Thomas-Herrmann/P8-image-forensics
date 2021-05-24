@@ -7,6 +7,7 @@ from qualitative_test import split_patches, predict_patches, combine_patches
 import tensorflow_addons as tfa
 import numpy as np
 from DataGenerator import get_two_class_valid_dataset
+import manipulations as man
 
 # https://data.mendeley.com/datasets/dk84bmnyw9/2
 CG_1050_ORIG_PATH     = "test/CG-1050/ORIGINAL/"
@@ -215,15 +216,14 @@ def get_FAU_image_manipulation_dataset():
             tf.TensorSpec(shape=(), dtype=tf.string))
     )
 
-
-def calculate_certainties(model, tampered, patch_multiplier, model_name, tampered_name, dataset_name):
+def calculate_certainties(model, tampered, patch_multiplier, model_name, tampered_name, dataset_name, use_caching=True):
     cache_dir = f"{RESULT_CACHE_PATH}/{dataset_name}/pmul{patch_multiplier}/{model_name}/"
-    if not os.path.exists(cache_dir):
+    if use_caching and not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
 
     cache_path = f"{cache_dir}{tampered_name}.npy"
     # Try to load from cache
-    if os.path.exists(cache_path):
+    if use_caching and os.path.exists(cache_path):
         certainties = np.load(cache_path)
     else:
         patches = split_patches(tampered, 256, 256, patch_multiplier)
@@ -231,18 +231,20 @@ def calculate_certainties(model, tampered, patch_multiplier, model_name, tampere
         combined = combine_patches(pred_patches)
 
         certainties = tf.expand_dims(tf.gather(tf.nn.softmax(combined), 1, axis=-1), axis=-1)
-        certainties = tf.cast(certainties, tf.float16)
-        np.save(cache_path, certainties)
+        
+        if use_caching:
+            certainties = tf.cast(certainties, tf.float16)
+            np.save(cache_path, certainties)
     
     return certainties
 
-def test_metric(model, dataset, metrics, model_name, patch_multiplier=1):
+def test_metric(model, dataset, metrics, model_name, patch_multiplier=1, use_caching=True):
     counter = 0
     for i, (tampered, mask, img_name, dataset_name) in enumerate(dataset):
         if i % 5 == 0:
             print(i)
 
-        certainties = calculate_certainties(model, tampered, patch_multiplier, model_name, img_name, dataset_name)
+        certainties = calculate_certainties(model, tampered, patch_multiplier, model_name, img_name, dataset_name, use_caching)
 
         mask = tf.expand_dims(tf.gather(mask, 0, axis=-1), axis=-1)
         mask = tf.cast(mask>0, tf.int32)
@@ -254,23 +256,45 @@ def test_metric(model, dataset, metrics, model_name, patch_multiplier=1):
 
     return counter
 
+def test_validation(model, metrics, manipulation_func, manipulation_parameters):
+    batch_size = 32
+    dataset_original = get_two_class_valid_dataset(batch_size=batch_size)
+
+    results_all = []
+
+    for man_parameter in manipulation_parameters:
+        print(f"Parameter {man_parameter}")
+        dataset = dataset_original.unbatch()
+        dataset = dataset.map(manipulation_func(man_parameter), num_parallel_calls=tf.data.AUTOTUNE)
+        dataset = dataset.batch(batch_size)
+
+        for i, (images, masks) in enumerate(dataset):
+            if i % 5 == 0:
+                print(i * batch_size)
+            
+            prediction_b = model(images)
+            certainties_b = tf.gather(tf.nn.softmax(prediction_b), 1, axis=-1)
+
+            for certainties, mask in zip(certainties_b, masks):
+                mask = tf.expand_dims(tf.gather(mask, 0, axis=-1), axis=-1)
+                mask = tf.cast(mask>0, tf.int32)
+
+                for metric in metrics:
+                    metric.update_state(mask, certainties)
+
+        results = []
+        for metric in metrics:
+            results.append(metric.result().numpy())
+            metric.reset_states()
+        print(results)
+
+        results_all.append(results)
+    
+    return results_all
 
 if __name__ == "__main__":
     physical_devices = tf.config.list_physical_devices('GPU') 
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
-
-    def run_tests(dataset, model, model_name, patch_multiplier=1):
-        threshold = 0.5
-        acc = tf.keras.metrics.BinaryAccuracy(threshold=threshold)
-        auc = tf.keras.metrics.AUC(num_thresholds=10)
-        f1 = tfa.metrics.F1Score(num_classes=2, average="micro", threshold=threshold)
-        ce = tf.keras.metrics.BinaryCrossentropy(from_logits=False)
-
-        num = test_metric(model, dataset, [acc, auc, f1, ce], model_name, patch_multiplier)
-
-        return ({"acc": acc.result().numpy(), "auc": auc.result().numpy(), "f1": f1.result().numpy(), "cre": ce.result().numpy()}, num)
-
-    #generate_CG_1050_masks()
 
     model_name = "2class_aaconv_save_at_93_final.tf"
     #model_name = "2_class_pixel_conv_save_at_89_final.tf"
@@ -281,18 +305,53 @@ if __name__ == "__main__":
     #dataset = get_CASIA2_dataset()
     #dataset = get_CASIA2_dataset(pattern="Tp_D_???_?_?_*")
     #dataset = get_CASIA2_dataset(pattern="Tp_S_???_?_?_*")
-    dataset = get_COVERAGE_dataset()
-    #dataset = get_validation_dataset()
+    #dataset = get_COVERAGE_dataset().take(1)
+    dataset = get_validation_dataset().prefetch(16)
     #dataset = get_FAU_image_manipulation_dataset()
+
+    def run_tests(patch_multiplier=1):
+        threshold = 0.5
+        acc = tf.keras.metrics.BinaryAccuracy(threshold=threshold)
+        auc = tf.keras.metrics.AUC(num_thresholds=10)
+        f1 = tfa.metrics.F1Score(num_classes=2, average="micro", threshold=threshold)
+        ce = tf.keras.metrics.BinaryCrossentropy(from_logits=False)
+
+        num = test_metric(model, dataset, [acc, auc, f1, ce], model_name, patch_multiplier, False)
+
+        return ({"acc": acc.result().numpy(), "auc": auc.result().numpy(), "f1": f1.result().numpy(), "cre": ce.result().numpy()}, num)
+
+    def run_robustness_tests(parameters, man_func):
+        threshold = 0.5
+        acc = tf.keras.metrics.BinaryAccuracy(threshold=threshold)
+        auc = tf.keras.metrics.AUC(num_thresholds=10)
+        f1 = tfa.metrics.F1Score(num_classes=2, average="micro", threshold=threshold)
+        ce = tf.keras.metrics.BinaryCrossentropy(from_logits=False)
+
+        results = test_validation(model, [acc, auc, f1, ce], man_func, parameters)
+        print(f"Model name: {model_name}")
+        print(f"Parameters: {parameters}")
+        print(f"Results (acc, auc, f1, ce): {results}")
+        return results
+
+    #generate_CG_1050_masks()
+
+    def man_func_jpeg(par):
+        return lambda img, mask : (tf.image.adjust_jpeg_quality(img, par), mask)
+    
+    def man_func_resize(par):
+        down_size = round(256 * (par/100))
+        return lambda img, mask : (tf.image.resize(tf.image.resize(img, (down_size, down_size)), (256, 256)), mask)
+
+    #run_robustness_tests(list(range(50, 101, 2)), man_func_jpeg)
+    run_robustness_tests(list(range(10, 101, 2)), man_func_resize)
 
     #for i, (tampered, mask, name, dataset_name) in enumerate(dataset):
         #print(f"out{i}")
         #tf.io.write_file(f"out/out{i}.png", tf.io.encode_png(tf.concat([tampered, mask], axis=1)))
         #tf.io.write_file(f"test_out{i}.png", tf.io.encode_png(tf.concat([image, mask, tf.reshape(c_mask, [256, 256, 3])]))) 
 
-    results, _ = run_tests(dataset, model, model_name, 5)
-
-    print(f"Acc: {results['acc']}")
-    print(f"AUC: {results['auc']}")
-    print(f"F1 : {results['f1']}")
-    print(f"CrE: {results['cre']}")
+    #results, _ = run_tests(1)
+    #print(f"Acc: {results['acc']}")
+    #print(f"AUC: {results['auc']}")
+    #print(f"F1 : {results['f1']}")
+    #print(f"CrE: {results['cre']}")
